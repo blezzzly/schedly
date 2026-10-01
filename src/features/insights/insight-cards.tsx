@@ -160,7 +160,11 @@ export function ScheduleInsightsCards({
         </div>
         {action}
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      {/* Five cards hard-wired to two columns stranded the 5th on its own row and
+          stretched each card across ~560px of desktop width to hold one short
+          line of text. `md:grid-cols-3` gives tablets a middle step and puts
+          the row to work on a desktop. */}
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
         <HeaviestDayCard insights={insights} />
         <LightestDayCard insights={insights} />
         <FreeDaysCard insights={insights} />

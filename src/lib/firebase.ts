@@ -78,12 +78,14 @@ function getFcmConfig() {
  *  (and the FCM token request) have a handler to target. */
 export async function ensureFcmRegistration(): Promise<ServiceWorkerRegistration | null> {
   try {
-    // Production only — see src/lib/push.ts for why the SW must not run in dev.
-    if (process.env.NODE_ENV !== "production") return null;
+    // Same URL as src/lib/push.ts: `?dev=1` in development so the worker skips
+    // all caching there (dev chunk URLs change on every restart, and a
+    // cache-first worker would serve stale modules). Keep the two in sync.
+    const swUrl = process.env.NODE_ENV === "production" ? "/sw.js" : "/sw.js?dev=1";
     const existing = await navigator.serviceWorker.getRegistration("/");
     let reg = existing && existing.active ? existing : null;
     if (!reg) {
-      reg = await navigator.serviceWorker.register("/sw.js", {
+      reg = await navigator.serviceWorker.register(swUrl, {
         updateViaCache: "none",
       });
     }
@@ -182,7 +184,7 @@ export async function subscribeToPush(): Promise<PushResult> {
       return {
         ok: false,
         reason:
-          "The app's background service is still starting up. Refresh, then try again.",
+          "Couldn't attach to the app's background worker. Close and reopen the app, then try again.",
       };
     }
 
@@ -248,7 +250,7 @@ export async function subscribeToPush(): Promise<PushResult> {
       }
       return {
         ok: false,
-        reason: `Couldn't subscribe this device (${name || "unknown error"}). Check your connection and try again.`,
+        reason: "Couldn't turn on reminders for this device. Check your connection and try again.",
       };
     }
 
@@ -284,7 +286,7 @@ export async function subscribeToPush(): Promise<PushResult> {
   } catch {
     return {
       ok: false,
-      reason: "Couldn't subscribe this device. Check your connection and try again.",
+      reason: "Couldn't turn on reminders for this device. Check your connection and try again.",
     };
   }
 }

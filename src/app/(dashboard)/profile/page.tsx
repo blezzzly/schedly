@@ -170,11 +170,16 @@ export default function ProfilePage() {
     );
   }
 
-  // Desktop: render the same content inline, in a centered card with a soft
-  // background — no more round-trip to /settings, no more redirect flicker.
+  // Desktop: render the same content inline, in a centered card — no more
+  // round-trip to /settings, no more redirect flicker.
+  //
+  // `pt-6 md:pt-10` used to stack on the layout's own `md:pt-6`, so desktop
+  // opened with 64px of dead space above the profile — the one thing you came
+  // here to look at. And the wrapper was still on the old soft-shadow card
+  // styling, so it read as a different product from every other card.
   return (
-    <div className="mx-auto max-w-3xl pt-6 md:pt-10 pb-12">
-      <div className="rounded-2xl border border-border/50 bg-card shadow-sm overflow-hidden">
+    <div className="mx-auto max-w-3xl pt-6 pb-12 md:pt-0">
+      <div className="overflow-hidden rounded-2xl border-2 border-foreground/70 bg-card shadow-[3px_3px_0_0_#401f32]">
         <ProfileSheetContent
           user={u}
           gamification={gamification}

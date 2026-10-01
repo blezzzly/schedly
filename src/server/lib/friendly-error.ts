@@ -41,6 +41,9 @@ const PATTERNS: Array<{ test: RegExp; message: string }> = [
   // Daily AI/processing budget exhausted — comes back tomorrow.
   { test: /DAILY_AI_LIMIT_REACHED/i, message: "We've reached today's processing limit. Please try again tomorrow — your limit resets daily." },
 
+  // Guest accounts get a small free allowance, then we ask them to sign up.
+  { test: /GUEST_AI_LIMIT_REACHED/i, message: "You've used your free tries. Create an account to keep going — it's free." },
+
   // Schedule / image extraction
   { test: /AI returned data in an unrecognized format/i, message: "We couldn't process your schedule. Please try again later." },
   { test: /All AI providers failed/i, message: "We couldn't process your schedule. Please try again later." },

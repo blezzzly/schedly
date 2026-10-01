@@ -11,11 +11,11 @@ import {
   type PlannerClass,
 } from "./actions";
 import { Button } from "@/components/ui/button";
+import { AppNavPanel } from "@/components/app-nav-panel";
 import { Card, CardContent } from "@/components/ui/card";
 import { TextField } from "@/components/ui/text-field";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Spinner } from "@/components/ui/spinner";
-import { AppNavPanel } from "@/components/app-nav-panel";
 import { HeaderAvatar } from "@/components/header-avatar";
 import { NotificationBell } from "@/components/notification-bell";
 import {
@@ -281,7 +281,7 @@ export default function PlannerPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-6xl pt-8 md:pt-0">
+    <div className="mx-auto w-full max-w-6xl pt-4 md:pt-0">
       <div className="mb-6 flex flex-wrap items-start justify-between gap-3 sm:mb-8">
         <div className="flex items-start gap-3">
           <HeaderAvatar />
@@ -319,7 +319,7 @@ export default function PlannerPage() {
 
       <div className="flex flex-col gap-6 md:flex-row md:items-start">
         <AppNavPanel />
-        <div className="min-w-0 flex-1 mx-auto w-full max-w-6xl space-y-4 md:mx-0">
+        <div className="min-w-0 flex-1 mx-auto w-full max-w-6xl space-y-4">
 
       {loading ? (
         <div className="flex justify-center py-16">

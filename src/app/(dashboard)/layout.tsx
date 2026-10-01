@@ -3,11 +3,13 @@
 import Image from "next/image";
 import { useEffect, useSyncExternalStore, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import { Menu, ArrowLeft, Settings } from "lucide-react";
 import { SkipNavigation } from "@/components/skip-navigation";
 import { Sidebar } from "@/components/sidebar";
 import { BottomNav } from "@/components/bottom-nav";
 import { OfflineBanner } from "@/components/offline-banner";
+import { GuestStatus } from "@/components/guest-status";
 import { NotificationBell } from "@/components/notification-bell";
 import { useThemeConfig } from "@/features/theme";
 import { useAuth } from "@/features/auth/hooks/use-auth";
@@ -22,6 +24,15 @@ import {
   getNotificationDetailSnapshot,
   subscribeNotificationDetail,
 } from "@/lib/notification-detail-store";
+
+// Loaded on demand. The quick-add panel pulls in the whole capture flow
+// (ldrs, the review form, the image pipeline), and because the shell renders on
+// EVERY dashboard page that weight used to ship in the initial bundle of pages
+// that never open it.
+const QuickAddSheet = dynamic(
+  () => import("@/components/quick-add-sheet").then((m) => m.QuickAddSheet),
+  { ssr: false }
+);
 
 function DashboardShell({ children }: { children: React.ReactNode }) {
   const { themeVars } = useThemeConfig();
@@ -110,7 +121,9 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
           reg.active?.postMessage({
             type: "PRECACHE",
             urls: [
-              "/dashboard", "/classes", "/capture", "/notes", "/notifications", "/pomodoro", "/gwa",
+              // No /capture: the capture flow is a sheet now, so there's no
+              // route to precache for it.
+              "/dashboard", "/classes", "/notes", "/notifications", "/pomodoro", "/gwa",
               ...(avatar ? [avatar] : []),
             ],
           });
@@ -236,8 +249,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
   const isProfile = pathname === "/profile";  // Admin pages are full-screen — same treatment as settings/profile.
   const isAdmin = pathname.startsWith("/admin");
 
-  // Capture page is a focused single-task screen — no bottom nav.
-  const isCapture = pathname === "/capture";
+  // The capture flow is a sheet, so there is no /capture route to special-case.
 
   // Notifications page is opened from the bell icon.
   const isNotifications = pathname === "/notifications";
@@ -365,7 +377,18 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
             onClick={() => setOpen(false)}
             className={[
               "flex-1 scroll-mt-2",
-              isImmersive ? "" : "px-4 pt-[calc(env(safe-area-inset-top)+4rem)] pb-28 sm:px-6 sm:pt-[calc(env(safe-area-inset-top)+4rem)] md:px-8 md:pt-16 md:pb-12",
+              // Mobile top padding has to clear the two floating buttons, which
+              // sit at `top-[safe-area + 1rem]` and are `h-11`, so their bottom
+              // edge lands at safe-area + 60px. 4rem gives that 4px of clearance
+              // — it can't go lower without them overlapping the content.
+              //
+              // Desktop had `md:pt-16` (64px) reserving space for a top bar that
+              // doesn't exist: the drawer, the menu button, the avatar and the
+              // bell are all `md:hidden`, and the desktop nav is `AppNavPanel`,
+              // rendered inside the page itself. So those 64px were pure dead
+              // space above the content on every screen. `md:pt-6` keeps a small
+              // optical margin without the gap.
+              isImmersive ? "" : "px-4 pt-[calc(env(safe-area-inset-top)+4rem)] pb-28 sm:px-6 sm:pt-[calc(env(safe-area-inset-top)+4rem)] md:px-8 md:pt-6 md:pb-12",
             ].join(" ")}
           >
           {isImmersive ? (
@@ -378,8 +401,21 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
         </main>
         </div>
 
-      {!isImmersive && !isProfile && !isNotifications && !isSettings && !isAdmin && !isCapture && <BottomNav />}
+      {!isImmersive && !isProfile && !isNotifications && !isSettings && !isAdmin && (
+        <BottomNav hidden={open} />
+      )}
       {!isImmersive && <OfflineBanner />}
+
+      {/* Guest banner + the sign-in claim that hands a guest's data to a real
+          account. Suppressed on the same full-screen pages as the bottom nav. */}
+      {!isImmersive && !isProfile && !isNotifications && !isSettings && !isAdmin && (
+        <GuestStatus hidden={open} />
+      )}
+
+      {/* Quick-add: the capture flow, opened from the bottom nav camera button
+          and the "Upload Schedule" empty states. Bottom sheet on mobile,
+          centred dialog on desktop. */}
+      {!isImmersive && <QuickAddSheet />}
 
       {/* Draggable profile bottom sheet — mobile only, opened from top-left avatar.
           Suppressed on /profile because that page route renders its own full-screen

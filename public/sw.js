@@ -22,6 +22,18 @@
 const CACHE_NAME = "schedly-cache-v4";
 const RSC_CACHE = `${CACHE_NAME}-rsc`;
 
+// Dev mode. The app registers this worker on localhost too — otherwise push
+// could only ever be tested against a production deploy — and the `?dev=1`
+// query is how we tell the two apart.
+//
+// With dev on this worker does NO caching at all: no precache, no fetch
+// handling, no navigation fallbacks. Every request goes straight to the
+// network. That matters because dev chunk URLs are rebuilt on each server
+// restart, so a cache-first worker would hand back stale module factories and
+// break HMR. Push and notification events are unaffected — the browser
+// dispatches those directly, they don't go through the fetch handler.
+const IS_DEV = new URL(self.location.href).searchParams.has("dev");
+
 // External images (avatars, weather icons) are fetched with no-cors so they
 // CAN be cached — otherwise the browser blocks them and offline avatars fail.
 function isExternalImage(url) {
@@ -61,6 +73,12 @@ const PRECACHE_ASSETS = [
 ];
 
 self.addEventListener("install", (event) => {
+  // Dev: activate immediately with an empty cache — nothing to precache, and
+  // precaching is exactly what would serve stale dev chunks.
+  if (IS_DEV) {
+    event.waitUntil(self.skipWaiting());
+    return;
+  }
   event.waitUntil(
     (async () => {
       const cache = await caches.open(CACHE_NAME);
@@ -76,12 +94,14 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     (async () => {
-      const keys = await caches.keys();
-      await Promise.all(
-        keys
-          .filter((k) => !k.startsWith(CACHE_NAME) && k !== ALARMS_CACHE)
-          .map((k) => caches.delete(k))
-      );
+      if (!IS_DEV) {
+        const keys = await caches.keys();
+        await Promise.all(
+          keys
+            .filter((k) => !k.startsWith(CACHE_NAME) && k !== ALARMS_CACHE)
+            .map((k) => caches.delete(k))
+        );
+      }
       await self.clients.claim();
       // Re-arm persisted reminder alarms (SW restarts, cache updates, etc.).
       await armAlarms();
@@ -256,6 +276,8 @@ self.addEventListener("message", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
+  // Dev: stay out of the way entirely so nothing is ever served from a cache.
+  if (IS_DEV) return;
   const { request } = event;
   const url = new URL(request.url);
 

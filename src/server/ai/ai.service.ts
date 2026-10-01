@@ -70,6 +70,37 @@ export class AiDailyLimitError extends Error {
   }
 }
 
+/**
+ * Charge the caller's guest AI allowance, if they are a guest.
+ *
+ * Resolved per-request from the session cookie so this single choke point
+ * covers every AI task. Any failure to identify the caller is swallowed: a
+ * background worker, a script, or a session lookup hiccup must never be able
+ * to break a real user's upload.
+ */
+async function meterGuestAi(): Promise<void> {
+  try {
+    // Order matters: `headers()` first, because it's the cheap check that
+    // fails outside a request scope (background workers, scripts, tests). That
+    // way we never pay for constructing the auth instance when there's no
+    // request to attribute the call to.
+    const { headers } = await import("next/headers");
+    const requestHeaders = await headers();
+
+    const { auth } = await import("@/server/lib/auth");
+    const { consumeGuestAiAllowance } = await import("@/server/lib/guest");
+
+    const session = await auth.api.getSession({ headers: requestHeaders });
+    if (!session?.user?.id) return;
+
+    await consumeGuestAiAllowance(session.user.id);
+  } catch (err) {
+    // Re-throw the guest limit so the user gets the "create an account" copy;
+    // swallow everything else (no request scope, DB blip, etc.).
+    if (err instanceof Error && err.name === "GuestAiLimitError") throw err;
+  }
+}
+
 export async function generateWithFallback(
   task: TaskType,
   input: { image?: { base64: string; mimeType: string }; text?: string; json?: Record<string, unknown> },
@@ -80,6 +111,11 @@ export async function generateWithFallback(
   if (await isDailyAiBudgetExhausted()) {
     throw new AiDailyLimitError();
   }
+
+  // Guest accounts get a small free allowance. Enforced here rather than in
+  // each caller so no AI path can bypass it by accident. Fail-open if we can't
+  // identify the caller (e.g. no request scope, background worker).
+  await meterGuestAi();
 
   const providers = getFallbackChain(task);
 

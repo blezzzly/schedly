@@ -9,6 +9,17 @@ import { db } from "@/server/db/client";
 import { scheduleQstashReminders } from "@/server/services/qstash-reminder.service";
 import { auditLog } from "@/server/lib/audit";
 import { generateShortName } from "@/lib/abbreviations";
+import { toShareable } from "@/lib/schedule-share";
+import {
+  createShareCode,
+  peekShareCode,
+  consumeShareCode,
+  isValidCodeShape,
+  lookupRateLimitKey,
+  LOOKUP_LIMIT,
+  LOOKUP_WINDOW_MS,
+} from "@/server/lib/schedule-share-store";
+import { peekRateLimitDb, checkRateLimitDb } from "@/server/lib/security";
 import type { DayOfWeek } from "@/generated/prisma/client";
 
 export type SaveScheduleResult =
@@ -79,6 +90,134 @@ export async function getUserSchedules() {
     return await scheduleService.getByUser(session.user.id);
   } catch {
     return [];
+  }
+}
+
+/**
+ * Mint a six-digit share code for one of the caller's schedules.
+ *
+ * Ownership is checked here rather than trusting the id, so nobody can mint a
+ * code for another account's timetable. Only one live code per schedule at a
+ * time — re-sharing replaces the old one, so a code a classmate already has
+ * can't be silently invalidated and a stale code can't linger past its own use.
+ */
+export async function createScheduleShareCode(
+  scheduleId: string
+): Promise<{ ok: true; code: string; expiresAt: string } | { ok: false; error: string }> {
+  const session = await auth.api.getSession({ headers: await headers() });
+  if (!session) return { ok: false, error: "Unauthorized" };
+
+  try {
+    const schedule = await db.schedule.findFirst({
+      where: { id: scheduleId, userId: session.user.id },
+      select: {
+        title: true,
+        semester: true,
+        academicYear: true,
+        classes: {
+          select: {
+            subject: true,
+            shortName: true,
+            code: true,
+            instructor: true,
+            room: true,
+            section: true,
+            block: true,
+            notes: true,
+            days: true,
+            startTime: true,
+            endTime: true,
+          },
+        },
+      },
+    });
+
+    if (!schedule) return { ok: false, error: "Schedule not found" };
+    if (schedule.classes.length === 0) {
+      return { ok: false, error: "That schedule has no classes to share." };
+    }
+
+    await db.scheduleShare.deleteMany({ where: { scheduleId, userId: session.user.id } });
+
+    const result = await createShareCode(session.user.id, scheduleId, toShareable(schedule as never));
+    if (!result.ok) return result;
+
+    return { ok: true, code: result.code, expiresAt: result.expiresAt.toISOString() };
+  } catch (err) {
+    console.error("[CREATE_SHARE_CODE]", err);
+    return { ok: false, error: "Couldn't create a share code. Please try again." };
+  }
+}
+
+/**
+ * Import a schedule from a six-digit share code.
+ *
+ * Peek first, commit second: the rate limit is charged only for attempts that
+ * got past the shape check, and the code is marked spent only once the schedule
+ * actually exists — so a failed import doesn't burn the classmate's code.
+ *
+ * The decoded payload is then re-validated with `saveScheduleSchema` before it
+ * reaches `scheduleService.create`, exactly like an AI extraction result. A
+ * guessed code is indistinguishable from a real one, so this path treats it as
+ * untrusted input regardless of where it came from.
+ */
+export async function importScheduleFromCode(
+  rawCode: string
+): Promise<{ ok: true; scheduleId: string; classCount: number } | { ok: false; error: string }> {
+  const session = await auth.api.getSession({ headers: await headers() });
+  if (!session) return { ok: false, error: "Unauthorized" };
+
+  if (!isValidCodeShape(rawCode)) {
+    return { ok: false, error: "A share code is 6 digits." };
+  }
+
+  const { allowed } = await peekRateLimitDb(
+    lookupRateLimitKey(session.user.id),
+    LOOKUP_LIMIT,
+    LOOKUP_WINDOW_MS,
+  );
+  if (!allowed) {
+    return {
+      ok: false,
+      error: `Too many attempts. Try again in about ${Math.max(1, Math.ceil(LOOKUP_WINDOW_MS / 60000))} minutes.`,
+    };
+  }
+
+  const lookup = await peekShareCode(rawCode);
+  if (!lookup.ok) return { ok: false, error: lookup.error };
+
+  // Charge the lookup now that we know it got past the shape check.
+  await checkRateLimitDb(lookupRateLimitKey(session.user.id), LOOKUP_LIMIT, LOOKUP_WINDOW_MS);
+
+  const parsed = saveScheduleSchema.safeParse({
+    title: lookup.schedule.title,
+    semester: lookup.schedule.semester,
+    academicYear: lookup.schedule.academicYear,
+    classes: lookup.schedule.classes,
+  });
+  if (!parsed.success) {
+    console.error("[IMPORT_SCHEDULE_CODE] validation failed", parsed.error.issues);
+    return { ok: false, error: "That code contains data this app can't read." };
+  }
+
+  try {
+    const schedule = await scheduleService.create(session.user.id, parsed.data);
+    const classCount = parsed.data.classes.length;
+    await consumeShareCode(rawCode);
+    auditLog("schedule.import_code", {
+      userId: session.user.id,
+      scheduleId: schedule.id,
+      classCount,
+    });
+    await notificationService.create(session.user.id, {
+      type: "schedule_update",
+      title: "Schedule Imported",
+      body: `${parsed.data.title} was added — ${classCount} class${classCount !== 1 ? "es" : ""} imported.`,
+    });
+    return { ok: true, scheduleId: schedule.id, classCount };
+  } catch (err) {
+    console.error("[IMPORT_SCHEDULE_CODE]", err);
+    return { ok: false, error: "Couldn't import that schedule. Please try again." };
   }
 }
 

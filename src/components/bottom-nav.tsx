@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { primaryNav } from "@/config/navigation";
+import { openQuickAdd, closeQuickAdd, getQuickAddSnapshot } from "@/lib/quick-add-sheet";
 import {
   LayoutDashboard,
   Calendar,
@@ -21,25 +22,39 @@ const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   timer: Timer,
 };
 
-const ADD_PAGE = "/capture";
-
-export function BottomNav() {
+/**
+ * `hidden` retires the nav while the mobile drawer is open.
+ *
+ * Both this and the drawer sat at `z-40`, and the drawer is `top-16 max-h-[80vh]`
+ * — so on a tall phone it reached down into the nav, and because this nav comes
+ * later in the DOM it painted straight over the drawer's lower half. Two
+ * competing navigation targets on one screen, and the tap target belonged to
+ * whichever won the paint order.
+ */
+export function BottomNav({ hidden = false }: { hidden?: boolean }) {
   const pathname = usePathname();
-  const router = useRouter();
   const items = primaryNav;
 
+  // Opens the capture flow in a sheet. Already open → just dismiss, so the
+  // button is a toggle rather than a no-op.
   const handleQuickAdd = () => {
-    if (pathname === ADD_PAGE) {
-      window.dispatchEvent(new CustomEvent("schedly:quickadd"));
+    if (getQuickAddSnapshot()) {
+      closeQuickAdd();
     } else {
-      router.push(ADD_PAGE);
+      openQuickAdd();
     }
   };
 
   return (
     <nav
       aria-label="Primary"
-      className="fixed inset-x-0 bottom-0 z-40 flex justify-center px-4 md:hidden"
+      // `invisible` (not just opacity-0) so a hidden nav is out of the
+      // accessibility tree and can't swallow taps meant for the page behind it.
+      className={cn(
+        "fixed inset-x-0 bottom-0 z-40 flex justify-center px-4 transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] md:hidden",
+        hidden && "pointer-events-none invisible translate-y-[130%] opacity-0",
+      )}
+      aria-hidden={hidden}
     >
       <div
         className="bottom-nav flex items-end justify-center gap-2 rounded-[1.75rem] border-2 border-foreground/70 bg-card/90 px-3 shadow-[4px_4px_0_0_#401f32] ring-1 ring-black/[0.03] backdrop-blur-xl"

@@ -11,11 +11,11 @@ import {
 import { authFetch } from "@/lib/auth-fetch";
 import { friendlyError } from "@/server/lib/friendly-error";
 import { Button } from "@/components/ui/button";
+import { AppNavPanel } from "@/components/app-nav-panel";
 import { Card, CardContent } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
 import { ProgressBar } from "@/components/ui/progress-bar";
 import { TextField } from "@/components/ui/text-field";
-import { AppNavPanel } from "@/components/app-nav-panel";
 import { HeaderAvatar } from "@/components/header-avatar";
 import { NotificationBell } from "@/components/notification-bell";
 import {
@@ -266,7 +266,7 @@ const [genCards, setGenCards] = useState<GenCard[]>([]);
   }
 
   return (
-    <div className="mx-auto w-full max-w-6xl pt-8 md:pt-0">
+    <div className="mx-auto w-full max-w-6xl pt-4 md:pt-0">
       <div className="mb-6 flex flex-wrap items-start justify-between gap-3 sm:mb-8">
         <div className="flex items-start gap-3">
           <HeaderAvatar />
@@ -284,7 +284,7 @@ const [genCards, setGenCards] = useState<GenCard[]>([]);
 
       <div className="flex flex-col gap-6 md:flex-row md:items-start">
         <AppNavPanel />
-        <div className="min-w-0 flex-1 mx-auto w-full max-w-4xl space-y-6 md:mx-0">
+        <div className="min-w-0 flex-1 mx-auto w-full max-w-4xl space-y-6">
 
       {decks.length === 0 ? (
         <div className="flex items-center justify-center min-h-[50vh]">

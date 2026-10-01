@@ -10,7 +10,6 @@ export default function robots(): MetadataRoute.Robots {
         "/api/",
         "/dashboard",
         "/classes",
-        "/capture",
         "/todo",
         "/notifications",
         "/pomodoro",

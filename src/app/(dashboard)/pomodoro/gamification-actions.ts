@@ -3,48 +3,56 @@
 import { headers } from "next/headers";
 import { auth } from "@/server/lib/auth";
 import { db } from "@/server/db/client";
+import { levelFromXp } from "@/lib/gamification-levels";
 
-const XP_PER_LEVEL = [0, 0, 50, 150, 300, 500, 750, 1050, 1400, 1800, 2250, 2750, 3300, 3900, 4550, 5250, 6000, 6800, 7650, 8550, 9500];
 const FOCUS_XP_PER_MINUTE = 1;
 const TASK_XP = 15; // XP earned per completed task
 const FLASHCARD_XP_PER_REVIEW = 2; // XP earned per reviewed flashcard (regardless of rating)
 
+/**
+ * The level is DERIVED from the XP total everywhere it's displayed, rather than
+ * read back from the `level` column.
+ *
+ * That column could only ever ratchet upward (`if (newLevel > profile.level)`),
+ * so the off-by-one in the old XP table left every existing account stuck a
+ * level too high, permanently. Deriving on read makes those rows self-heal the
+ * moment anyone looks at their profile, with no migration and no backfill — and
+ * it means a drifted column can never again disagree with the number on screen.
+ */
 function calcLevel(xp: number): number {
-  for (let i = XP_PER_LEVEL.length - 1; i >= 1; i--) {
-    if (xp >= (XP_PER_LEVEL[i] ?? 0)) return i + 1;
-  }
-  return 1;
+  return levelFromXp(xp);
 }
 
 function todayKey(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-async function awardXp(userId: string, amount: number) {
-  if (amount <= 0) return;
-  await db.userProfile.upsert({
+/**
+ * Recompute the level from the XP total and write it back to the `level`
+ * column, returning the level.
+ *
+ * Each of the three XP paths (focus, task, flashcard) used to inline this
+ * behind `if (newLevel > profile.level)`, a one-way ratchet: the level could
+ * only ever go up. Combined with the off-by-one in the old XP table, that left
+ * existing accounts permanently pinned a level too high with no way to recover.
+ * Writing unconditionally is the same single-row update and lets a wrong value
+ * correct itself on the next XP event.
+ *
+ * The number shown to users is derived from XP, not read from this column, so
+ * the column is bookkeeping — but it should still be truthful.
+ */
+async function syncLevel(userId: string): Promise<number> {
+  const profile = await db.userProfile.findUnique({
     where: { userId },
-    create: {
-      userId,
-      xp: amount,
-      level: 1,
-      lastActiveDate: todayKey(),
-    },
-    update: {
-      xp: { increment: amount },
-      lastActiveDate: todayKey(),
-    },
+    select: { xp: true, level: true },
   });
-  const profile = await db.userProfile.findUnique({ where: { userId } });
-  if (profile) {
-    const newLevel = calcLevel(profile.xp);
-    if (newLevel > profile.level) {
-      await db.userProfile.update({
-        where: { userId },
-        data: { level: newLevel },
-      });
-    }
+  if (!profile) return 1;
+
+  const newLevel = calcLevel(profile.xp);
+  if (newLevel !== profile.level) {
+    await db.userProfile.update({ where: { userId }, data: { level: newLevel } });
   }
+  return newLevel;
 }
 
 export async function getGamificationProfile() {
@@ -93,7 +101,7 @@ export async function getGamificationProfile() {
 
     return {
       xp: profile.xp,
-      level: profile.level,
+      level: calcLevel(profile.xp),
       currentStreak: streakContinues ? profile.currentStreak + 1 : 1,
       longestStreak: Math.max(
         profile.longestStreak,
@@ -105,7 +113,7 @@ export async function getGamificationProfile() {
 
   return {
     xp: profile.xp,
-    level: profile.level,
+    level: calcLevel(profile.xp),
     currentStreak: profile.currentStreak,
     longestStreak: profile.longestStreak,
     totalFocusMinutes: profile.totalFocusMinutes,
@@ -173,18 +181,7 @@ export async function logFocusSession(durationMinutes: number, completed: boolea
         },
       });
 
-      const profile = await db.userProfile.findUnique({
-        where: { userId: session.user.id },
-      });
-      if (profile) {
-        const newLevel = calcLevel(profile.xp);
-        if (newLevel > profile.level) {
-          await db.userProfile.update({
-            where: { userId: session.user.id },
-            data: { level: newLevel },
-          });
-        }
-      }
+      await syncLevel(session.user.id);
     }
 
     return { success: true, xpEarned };
@@ -215,18 +212,7 @@ export async function logTaskCompleted() {
       },
     });
 
-    const profile = await db.userProfile.findUnique({
-      where: { userId: session.user.id },
-    });
-    if (profile) {
-      const newLevel = calcLevel(profile.xp);
-      if (newLevel > profile.level) {
-        await db.userProfile.update({
-          where: { userId: session.user.id },
-          data: { level: newLevel },
-        });
-      }
-    }
+    await syncLevel(session.user.id);
   } catch (err) {
     console.error("[LOG_TASK]", err);
   }
@@ -279,13 +265,7 @@ export async function logFlashcardReview(
     const profile = await db.userProfile.findUnique({ where: { userId: session.user.id } });
     let newLevel = prevLevel;
     if (profile) {
-      newLevel = calcLevel(profile.xp);
-      if (newLevel > prevLevel) {
-        await db.userProfile.update({
-          where: { userId: session.user.id },
-          data: { level: newLevel },
-        });
-      }
+      newLevel = await syncLevel(session.user.id);
     }
 
     return { success: true, xpEarned, newLevel, leveledUp: newLevel > prevLevel };

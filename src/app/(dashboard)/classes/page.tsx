@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
 import { useAuth } from "@/features/auth/hooks/use-auth";
 import { useMounted } from "@/lib/use-mounted";
 import { SchedulePreview } from "@/features/schedule/components/schedule-preview";
@@ -10,10 +9,11 @@ import { getUserSchedules, getSchedule, deleteSchedule } from "./actions";
 import { retry } from "@/lib/retry";
 import { withOfflineCache } from "@/lib/offline-cache";
 import { Button } from "@/components/ui/button";
+import { AppNavPanel } from "@/components/app-nav-panel";
+import { openQuickAdd } from "@/lib/quick-add-sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Skeleton as BoneSkeleton } from "boneyard-js/react";
 import { ArrowLeft, Calendar, Camera, Trash2 } from "lucide-react";
-import { AppNavPanel } from "@/components/app-nav-panel";
 import { HeaderAvatar } from "@/components/header-avatar";
 import { NotificationBell } from "@/components/notification-bell";
 
@@ -46,7 +46,6 @@ type ScheduleData = {
 type Phase = "list" | "view";
 
 export default function SchedulePage() {
-  const router = useRouter();
   const { isLoading: authLoading } = useAuth();
 
   const [phase, setPhase] = useState<Phase>("list");
@@ -98,7 +97,7 @@ export default function SchedulePage() {
   };
 
   return (
-    <div className="mx-auto w-full max-w-6xl pt-8 md:pt-0">
+    <div className="mx-auto w-full max-w-6xl pt-4 md:pt-0">
       {phase === "list" && (
         <div className="mb-6 flex flex-wrap items-start justify-between gap-3 sm:mb-8">
           <div className="flex items-start gap-3">
@@ -120,9 +119,9 @@ export default function SchedulePage() {
       )}
 
       <div className="flex flex-col gap-6 md:flex-row md:items-start">
-        <AppNavPanel />
 
-        <div className="min-w-0 flex-1 mx-auto w-full max-w-4xl md:mx-0">
+        <AppNavPanel />
+        <div className="min-w-0 flex-1 mx-auto w-full max-w-4xl">
       {/* === VIEW TIMETABLE === */}
       {phase === "view" && selectedSchedule && (
         <div className="space-y-4">
@@ -176,7 +175,7 @@ export default function SchedulePage() {
                   Upload a photo of your class schedule and let Schedly extract your timetable automatically.
                 </p>
                 <div className="mt-5 flex w-full flex-row gap-3">
-                  <Button className="flex-1 h-11 px-6 font-medium" onClick={() => router.push("/capture")}>
+                  <Button className="flex-1 h-11 px-6 font-medium" onClick={openQuickAdd}>
                     <Camera className="mr-2 h-4 w-4" />
                     Upload Schedule
                   </Button>

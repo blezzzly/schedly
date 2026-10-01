@@ -68,6 +68,20 @@
   /* Soft blue radial background — one layer behind the whole site */
   --app-backdrop: radial-gradient(circle at top center, rgba(59, 130, 246, 0.5), transparent 70%);
 
+  /* Dot grid, layered on top of --app-backdrop by shared pages.
+     A flat wash of colour behind a card reads as an empty screen; the grid
+     gives the surface a scale and a centre, which is what makes a shared
+     profile look composed rather than unfinished. Sized in px so it stays
+     evenly spaced at any viewport size, and coloured from --foreground so it
+     inverts correctly in dark mode instead of needing a second rule. */
+  --app-dot-grid:
+    radial-gradient(
+      circle,
+      color-mix(in oklab, var(--foreground) 10%, transparent) 1px,
+      transparent 1px
+    );
+  --app-dot-size: 18px 18px;
+
 /* Radius */
 --radius: 0.75rem;
   --sidebar-primary: oklch(0.59 0.22 355);
@@ -185,6 +199,37 @@ body {
   min-height: 100dvh;
 }
 
+/* Bottom sheet height: 90dvh. Tall enough for the capture/review flows to
+   have room, but leaving a clear band of the page behind it visible so it
+   still reads as a sheet rather than taking over the screen. Same vh -> dvh
+   fallback as above — inline styles can't express two values, so this has to
+   live in CSS. */
+.h-sheet {
+  height: 90vh;
+  height: 90dvh;
+}
+
+/* A shorter sheet for content that doesn't need the room — the quick-add
+   capture picker is one card plus a couple of buttons, so a near-full-height
+   sheet left it floating in empty space. Only the capture sheet uses this; the
+   profile sheet stays on `.h-sheet`.
+
+   Tuned for the initial "Upload your schedule" card, which is ~320px tall. The
+   review step is taller and scrolls inside the sheet regardless, so going much
+   below this trades away room for the edit form. */
+.h-sheet-sm {
+  height: 60vh;
+  height: 60dvh;
+}
+
+/* A sheet exactly as tall as its content, capped at the viewport. Used for
+   short panels (the guest name picker) where any fixed height is either
+   wasteful or — pushed low enough to look right — starts clipping content. */
+.h-sheet-auto {
+  max-height: 92vh;
+  max-height: 92dvh;
+}
+
 /* Custom themed scrollbar — desktop only (mobile stays hidden) */
 @media (min-width: 768px) {
   /* Always render the window scrollbar so the custom track is visible */
@@ -262,6 +307,40 @@ body {
   100% { transform: scale(1); opacity: 1; }
 }
 
+/* Gentle sway for the live tree. Slow enough to read as "alive" rather than
+   distracting — it runs for the whole focus session, so anything faster becomes
+   the thing you stare at instead of the timer. Amplitude is 2px and the motion
+   is a rotate, not a translate, so the icon stays visually anchored while the
+   leaves move. */
+@keyframes tree-sway {
+  0%, 100% { transform: rotate(-2.5deg); }
+  50% { transform: rotate(2.5deg); }
+}
+
+/* Wind shimmer that travels up the trunk. Two layers offset by half a cycle so
+   the highlight never pulses as a single block. */
+@keyframes tree-shimmer {
+  0% { opacity: 0; transform: translateY(4px); }
+  50% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-6px); }
+}
+
+/* Spring for the transport buttons. Fires on state change only (running <-> idle
+   and phase switch), not on a loop, so it reads as a response to a click rather
+   than as decoration. */
+@keyframes btn-spring {
+  0% { transform: scale(1); }
+  40% { transform: scale(0.93); }
+  70% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+@keyframes btn-spring-sm {
+  0% { transform: scale(1); }
+  45% { transform: scale(0.9); }
+  100% { transform: scale(1); }
+}
+
 @keyframes pulse-dot {
   0%, 100% { transform: scale(0.6); opacity: 0.3; }
   50% { transform: scale(1); opacity: 1; }
@@ -297,6 +376,30 @@ body {
   }
   .animate-grow-pop {
     animation: grow-pop 500ms ease-out;
+  }
+  .animate-tree-sway {
+    animation: tree-sway 4s ease-in-out infinite;
+    transform-origin: 50% 90%;
+  }
+  .animate-tree-shimmer {
+    animation: tree-shimmer 2.4s ease-in-out infinite;
+  }
+  .animate-btn-spring {
+    animation: btn-spring 260ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .animate-btn-spring-sm {
+    animation: btn-spring-sm 220ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+}
+
+/* Respect a reduced-motion preference. The tree still changes stage and the ring
+   still fills — only the looping decorative motion is dropped, since continuous
+   movement for the length of a focus session is exactly what this setting
+   exists to suppress. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-tree-sway,
+  .animate-tree-shimmer {
+    animation: none;
   }
 }
 

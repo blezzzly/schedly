@@ -58,6 +58,8 @@ model User {
   requiresReauth Boolean @default(true) @map("requires_reauth")
   widgetToken String? @unique @map("widget_token")
   onboardingCompleted Boolean @default(false) @map("onboarding_completed")
+  isAnonymous  Boolean  @default(false) @map("is_anonymous")
+  guestAiUsed  Int      @default(0) @map("guest_ai_used")
   clientType String? @map("client_type")
   lastSeenAt DateTime? @map("last_seen_at")
   createdAt DateTime @default(now()) @map("created_at")
@@ -72,6 +74,7 @@ model User {
   notifications Notification[]
   feedbacks     Feedback[]
   pushSubscriptions PushSubscription[]
+  scheduleShares  ScheduleShare[]
   fcmTokens        FCMToken[]
   flashcardDecks   FlashcardDeck[]
   flashcardProgress FlashcardProgress[]
@@ -168,6 +171,30 @@ model Class {
 
   @@index([scheduleId])
   @@map("classes")
+}
+
+/// A short share code that lets one account copy another account's schedule.
+model ScheduleShare {
+  /// Six digits, used as the primary key so lookups are a single index hit.
+  code       String    @id
+  scheduleId String    @map("schedule_id")
+  userId     String    @map("user_id")
+  /// The schedule itself, still compressed with lib/schedule-share. Keeping the
+  /// payload here rather than only a schedule id means the code keeps working if
+  /// the owner's schedule is later edited or deleted.
+  payload    String
+  expiresAt  DateTime  @map("expires_at")
+  /// Set on a successful import. A code is single-use: a 6-digit space is only
+  /// 1M combinations, so letting one code import twice doubles the window an
+  /// attacker has to replay a leaked code.
+  usedAt     DateTime? @map("used_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
+  @@index([userId])
+  @@map("schedule_shares")
 }
 
 model Reminder {

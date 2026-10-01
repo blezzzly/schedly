@@ -9,6 +9,8 @@ import {
   Plus
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { openQuickAdd } from "@/lib/quick-add-sheet";
+import { levelProgress, xpToNextLevel, formatFocusTime } from "@/lib/gamification-levels";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SchedulePreview } from "@/features/schedule/components/schedule-preview";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -556,7 +558,12 @@ export default function ProfileSheetContent({
                   <div className="flex flex-col items-center rounded-lg border border-border/50 bg-muted/30 py-3 px-2">
                     <div className="flex items-center gap-1">
                       <Timer className="h-4 w-4 text-green-500" />
-                      <span className="text-lg font-bold text-foreground">{gamification ? Math.floor(gamification.totalFocusMinutes / 60) : 0}h</span>
+                      {/* Minutes, not truncated hours: rounding 45 minutes down
+                          to "0h" made a brand-new user look like they had never
+                          focused at all. */}
+                      <span className="text-base font-bold tabular-nums text-foreground">
+                        {formatFocusTime(gamification?.totalFocusMinutes ?? 0)}
+                      </span>
                     </div>
                     <span className="text-[10px] text-muted-foreground">Focused</span>
                   </div>
@@ -571,13 +578,13 @@ export default function ProfileSheetContent({
                     <span className="text-xs font-bold text-primary">{gamification.xp} XP</span>
                   </div>
                   <div className="h-2 bg-muted/50 rounded-full overflow-hidden">
-                    <div 
+                    <div
                       className="h-full bg-primary rounded-full transition-all duration-500"
-                      style={{ width: `${Math.min((gamification.xp % 100), 100)}%` }}
+                      style={{ width: `${Math.round(levelProgress(gamification.xp, gamification.level || 1) * 100)}%` }}
                     />
                   </div>
                   <p className="text-[10px] text-muted-foreground mt-1 text-right">
-                    {100 - (gamification.xp % 100)} XP to next level
+                    {xpToNextLevel(gamification.xp, gamification.level || 1)} XP to next level
                   </p>
                 </section>
               )}
@@ -623,7 +630,10 @@ export default function ProfileSheetContent({
                   <Button 
                     variant="outline" 
                     size="sm"
-                    onClick={() => window.location.href = '/capture'}
+                    onClick={() => {
+                      onClose();
+                      openQuickAdd();
+                    }}
                   >
                     <Plus className="h-4 w-4 mr-1.5" />
                     Add Schedule

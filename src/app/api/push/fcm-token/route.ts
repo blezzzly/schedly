@@ -2,10 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { auth } from "@/server/lib/auth";
 import { db } from "@/server/db/client";
+import { resolveLiveUserId } from "@/server/lib/live-user";
 
 export async function POST(request: NextRequest) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // See src/server/lib/live-user.ts — a cached session can outlive its user
+  // row, and the upsert below would fail the FK constraint.
+  const userId = await resolveLiveUserId(session.user.id);
+  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await request.json().catch(() => null);
   const token = typeof body?.token === "string" ? body.token.trim() : "";
@@ -16,7 +22,7 @@ export async function POST(request: NextRequest) {
   await db.$transaction(async (tx) => {
     await (tx as typeof db).fCMToken.upsert({
       where: { token },
-      create: { userId: session.user.id, token },
+      create: { userId, token },
       update: { updatedAt: new Date() },
     });
 
@@ -25,7 +31,7 @@ export async function POST(request: NextRequest) {
     const timezone = typeof body?.timezone === "string" ? body.timezone.slice(0, 64) : "UTC";
     if (timezone !== "UTC") {
       await (tx as typeof db).user.updateMany({
-        where: { id: session.user.id },
+        where: { id: userId },
         data: { timezone },
       });
     }

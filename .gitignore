@@ -67,3 +67,10 @@ benchmark/report.md
 *-firebase-adminsdk-*.json
 firebase-admin*.json
 dev-test.log
+
+# Local dev server logs. These capture whatever the terminal printed, which can
+# include connection strings and stack traces, and none of it belongs in git.
+*.log
+
+# Local design tool exports, untracked by design.
+store-assets/

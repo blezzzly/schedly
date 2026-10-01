@@ -3,6 +3,7 @@ import { prismaAdapter } from "better-auth/adapters/prisma";
 import { nextCookies } from "better-auth/next-js";
 import { db } from "@/server/db/client";
 import { sendEmail } from "@/server/lib/email";
+import { isGuestEmail } from "@/server/lib/guest-identity";
 
 export const auth = betterAuth({
   database: prismaAdapter(db, {
@@ -32,6 +33,16 @@ export const auth = betterAuth({
         required: false,
       },
       isAdmin: {
+        type: "boolean",
+        required: false,
+        defaultValue: false,
+        input: false,
+      },
+      // Server-managed. Declaring it here is what puts it on the session user —
+      // the client reads it to render the guest banner, and without this the
+      // field exists in the DB but arrives as undefined. `input: false` keeps
+      // it out of updateUser so a client can't flag its own account as a guest.
+      isAnonymous: {
         type: "boolean",
         required: false,
         defaultValue: false,
@@ -147,6 +158,10 @@ export const auth = betterAuth({
           sendOnSignIn: true,
           autoSignInAfterVerification: true,
           sendVerificationEmail: async ({ user, url }) => {
+            // Guest accounts are created with a throwaway address in a domain
+            // we don't control, so the mail would bounce. Their email is
+            // marked verified server-side right after sign-up instead.
+            if (isGuestEmail(user.email)) return;
             try {
               await sendEmail({
                 to: user.email,
@@ -201,20 +216,33 @@ export const auth = betterAuth({
     user: {
       create: {
         before: async (user) => {
-          // Social sign-up (Google/GitHub) doesn't send our required fields.
-          // Derive them from the provider profile before the row is inserted.
+          // Social sign-up (Google/GitHub) doesn't send our required fields, so
+          // derive them from the provider profile. Sign-ups that DO carry them
+          // (email, and guests) are left alone — this hook used to overwrite
+          // unconditionally, which discarded a guest's deliberately blank last
+          // name.
           const name = (user.name ?? "").trim();
           const email = (user.email ?? "").trim();
           const nameParts = name.split(/\s+/);
-          const firstName = nameParts[0] ?? "";
-          const lastName = nameParts.slice(1).join(" ") || firstName;
-          const providedUsername = (user as Record<string, unknown>).username;
+          const raw = user as Record<string, unknown>;
+          const providedFirst = typeof raw.firstName === "string" ? raw.firstName.trim() : "";
+          const providedLast = typeof raw.lastName === "string" ? raw.lastName.trim() : "";
+          const providedUsername = raw.username;
+
+          const firstName =
+            providedFirst || nameParts[0] || email.split("@")[0] || "User";
+          // Deliberately NOT `|| firstName`. A single-word name — "Cher", or a
+          // guest's picked "Nikolai" — has no last part, and copying the first
+          // name into it made the profile header render "Nikolai Nikolai".
+          // Leaving it empty is fine: every display site already falls back to
+          // the first name on its own (`lastName ? a + b : a`).
+          const lastName = providedLast || nameParts.slice(1).join(" ");
 
           return {
             data: {
               ...user,
-              firstName: firstName || email.split("@")[0] || "User",
-              lastName: lastName || "User",
+              firstName,
+              lastName,
               // Only derive a username when the sign-up didn't provide one
               // (social providers). Email sign-ups keep the username the user chose.
               username: typeof providedUsername === "string" && providedUsername.trim()

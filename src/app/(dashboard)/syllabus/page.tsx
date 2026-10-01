@@ -4,9 +4,9 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { BookOpen, Plus, Trash2, Clock, ChevronRight, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { AppNavPanel } from "@/components/app-nav-panel";
 import { Card, CardContent } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
-import { AppNavPanel } from "@/components/app-nav-panel";
 import { HeaderAvatar } from "@/components/header-avatar";
 import { NotificationBell } from "@/components/notification-bell";
 import { SyllabusUploadDialog } from "@/features/syllabus/components/syllabus-upload-dialog";
@@ -71,7 +71,7 @@ export default function SyllabusPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-6xl pt-8 md:pt-0">
+    <div className="mx-auto w-full max-w-6xl pt-4 md:pt-0">
       <div className="mb-6 flex flex-wrap items-start justify-between gap-3 sm:mb-8">
         <div className="flex items-start gap-3">
           <HeaderAvatar />
@@ -89,19 +89,19 @@ export default function SyllabusPage() {
 
       <div className="flex flex-col gap-6 md:flex-row md:items-start">
         <AppNavPanel />
-        <div className="min-w-0 flex-1 mx-auto w-full max-w-4xl space-y-6 md:mx-0">
+        <div className="min-w-0 flex-1 mx-auto w-full max-w-6xl space-y-6">
 
       {syllabi.length === 0 ? (
-        <div className="flex items-center justify-center min-h-[50vh]">
-          <div className="relative w-full max-w-sm rounded-2xl border-2 border-border bg-card shadow-sm p-6 text-center">
+        <div className="flex items-center justify-center py-10">
+          <div className="relative flex w-full min-h-[19rem] flex-col items-center justify-center rounded-2xl border-2 border-foreground/70 bg-card p-6 text-center shadow-[3px_3px_0_0_#401f32]">
             <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10">
               <BookOpen className="h-7 w-7 text-primary" />
             </div>
             <h3 className="text-lg font-semibold text-foreground">No syllabi yet</h3>
-            <p className="mt-1 max-w-xs mx-auto text-sm text-muted-foreground leading-relaxed">
+            <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground leading-relaxed">
               Upload your first syllabus to organize academic requirements
             </p>
-            <div className="mt-5 flex w-full flex-row gap-3">
+            <div className="mt-6 flex w-full max-w-xs flex-row gap-3">
               <Button className="flex-1 h-11 px-6 font-medium" onClick={() => setUploadOpen(true)}>
                 <Plus className="mr-2 h-4 w-4" />
                 Add Syllabus
@@ -110,7 +110,7 @@ export default function SyllabusPage() {
           </div>
         </div>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {syllabi.map((syllabus) => {
             const upcoming = getUpcomingCount(syllabus.requirements);
             const total = syllabus.requirements.length;

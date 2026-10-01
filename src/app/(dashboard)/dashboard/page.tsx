@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useAuth } from "@/features/auth/hooks/use-auth";
-import { AppNavPanel } from "@/components/app-nav-panel";
 import { getUserSchedules } from "@/app/(dashboard)/classes/actions";
 import {
   getWeatherByCoords,
@@ -31,6 +30,7 @@ import {
   WeatherCard,
 } from "@/features/dashboard/components";
 import { UpdateAnnouncement } from "@/components/update-announcement";
+import { AppNavPanel } from "@/components/app-nav-panel";
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -60,10 +60,14 @@ export default function DashboardPage() {
       })();
 
   const u = user as
-    | { username?: string; firstName?: string; image?: string; avatarUrl?: string }
+    | { username?: string; firstName?: string; name?: string; isAnonymous?: boolean; image?: string; avatarUrl?: string }
     | null
     | undefined;
-  const username = u?.username || "there";
+  // Guests get a short `guestNNN` handle as their username (it's what the /u/
+  // profile route needs), but the name they actually picked at sign-in lives in
+  // `name`. Greet them with the name they chose — "Good morning, guest851"
+  // reads like a database row, "Good morning, Andres" reads like a person.
+  const username = (u?.isAnonymous ? u?.name : u?.username) || u?.firstName || u?.name || "there";
 
   useEffect(() => {
     retry(() => withOfflineCache("schedule:list", () => cachedAction("dash:schedules", () => getUserSchedules())), { delayMs: 2000 })
@@ -292,7 +296,7 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-4 pt-8 md:pt-0 md:space-y-8">
+    <div className="mx-auto w-full max-w-6xl space-y-4 pt-4 md:pt-0 md:space-y-8">
       <UpdateAnnouncement />
       <DashboardHeader greeting={greeting} username={username} />
 
@@ -330,6 +334,7 @@ export default function DashboardPage() {
             downloading={downloading}
             onDownload={handleDownload}
             onEdited={reloadSchedules}
+            onRefresh={reloadSchedules}
             scheduleRef={scheduleRef}
             captureRef={captureRef}
           />

@@ -205,8 +205,12 @@ export default function AdminLimitsPage() {
     );
   }
 
+  // `p-6` on all four sides doubled up with the layout's own `md:px-8` and its
+  // `md:pt-6`, and there was no `md:pt-0`, so a dense monitoring screen opened
+  // with ~50px of dead space above the fold. Widened too: these are numbers to
+  // compare against each other, not a form to fill in.
   return (
-    <div className="mx-auto max-w-3xl space-y-6 p-6">
+    <div className="mx-auto max-w-5xl space-y-6 px-4 pt-4 pb-24 sm:px-6 md:px-0 md:pt-0 md:pb-12">
       <div>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex items-start gap-3">

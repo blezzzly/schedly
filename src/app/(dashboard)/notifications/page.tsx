@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
@@ -10,12 +10,13 @@ import {
   deleteNotification as deleteNotificationAction,
 } from "@/app/(dashboard)/notifications/actions";
 import { getUserReminders, updateReminder, type UpdateReminderResult } from "@/app/(dashboard)/reminders/actions";
-import { isPushSupported, getPushState, pushUnsupportedReasons, enablePush, disablePush, sendTestPush, isIosPwa, type PushErrorCode } from "@/lib/push";
+import { isPushSupported, getPushState, enablePush, disablePush, sendTestPush, isIosPwa, type PushErrorCode } from "@/lib/push";
 import { programReminderAlarms } from "@/lib/notification-scheduler";
 import {
   setNotificationDetailOpen,
 } from "@/lib/notification-detail-store";
 import { Button } from "@/components/ui/button";
+import { openQuickAdd } from "@/lib/quick-add-sheet";
 import {
   Dialog,
   DialogContent,
@@ -29,8 +30,6 @@ import { Skeleton as BoneSkeleton } from "boneyard-js/react";
 import { HeaderBack } from "@/components/header-back";
 import {
   Bell,
-  BellOff,
-  BellRing,
   Check,
   CheckCheck,
   Trash2,
@@ -184,21 +183,30 @@ function buildPushHelpSteps(code: PushErrorCode): string[] {
   if (isIosPwa()) {
     return [
       "Make sure Schedly was installed from your Home Screen ΓÇö push alerts don't work in Safari tabs.",
-      "Open iOS Settings ΓåÆ Schedly ΓåÆ Notifications and allow alerts.",
-      "Come back to the app, refresh the page, and turn the toggle on again.",
+      "Open iOS Settings → Schedly → Notifications and allow alerts.",
+      "Reopen the app and turn reminders on again.",
     ];
   }
   if (code === "NOTIFICATION_PERMISSION_DENIED") {
     return [
       "Notifications are blocked for this site. Open your browser or phone settings and allow Schedly notifications.",
-      "Then come back, refresh the page, and turn the toggle on again.",
+      "Then reopen the app and turn reminders on again.",
+    ];
+  }
+  if (code === "SERVICE_WORKER_NOT_READY") {
+    // A worker that fails to attach is almost always an in-app browser or a
+    // flaky first load — not something a page refresh fixes.
+    return [
+      "Close the app completely, then open it again.",
+      "On Android, use the Chrome app — in-app browsers (like Facebook or Messenger) block push alerts.",
+      "Make sure you're online with a stable connection.",
+      "If it still fails, check that notifications for Schedly aren't blocked in your device settings.",
     ];
   }
   return [
-    "Refresh the page, then try the toggle again.",
-    "On Android, use the Chrome app ΓÇö in-app browsers (like Facebook or Messenger) block push alerts.",
+    "On Android, use the Chrome app — in-app browsers (like Facebook or Messenger) block push alerts.",
     "Make sure you're online with a stable connection, then try again.",
-    "If it still fails, check your browser settings and confirm notifications for Schedly aren't blocked.",
+    "If it still fails, check that notifications for Schedly aren't blocked in your device settings.",
   ];
 }
 
@@ -293,15 +301,36 @@ export function NotificationsPage() {
     };
   }, []);
 
-  // Restore push subscription state ΓÇö defaults to OFF unless this device is
-  // actually subscribed through the current VAPID key.
+  // Restore push subscription state, and auto-enable where that's possible
+  // without asking.
+  //
+  // `Notification.requestPermission()` is deliberately NOT called here. Browsers
+  // treat an unsolicited prompt as spam: Chrome will frequently ignore or
+  // auto-dismiss it, and that can burn the site's chance to prompt again for
+  // the user. iOS additionally requires a real user gesture. So we only
+  // auto-subscribe in the one case that needs no prompt at all: permission has
+  // already been granted on this device but the push subscription is missing
+  // (e.g. the VAPID key rotated, or the SW was re-registered).
+  //
+  // A device that has never been asked still requires one tap, so the toggle
+  // below stays the way in.
   useEffect(() => {
     if (!isPushSupported()) return;
     let active = true;
     getPushState()
-      .then((s) => {
+      .then(async (s) => {
         if (!active) return;
-        if (s.kind === "granted") setPushEnabled(s.subscribed);
+        if (s.kind === "granted") {
+          if (s.subscribed) {
+            setPushEnabled(true);
+            return;
+          }
+          // Already permitted — finish the job without a prompt.
+          const result = await enablePush();
+          if (!active) return;
+          if (result.ok) setPushEnabled(true);
+          return;
+        }
         if (s.kind === "denied") setPushBlocked(true);
       })
       .catch(() => {
@@ -395,6 +424,34 @@ export function NotificationsPage() {
     togglePush();
   };
 
+  /** One tap for a first-time device: turn reminders on AND prove they work by
+   *  sending a test push, so the user doesn't have to enable and then test as
+   *  two separate steps. */
+  const enableAndTest = async () => {
+    if (pushUpdating || pushTesting) return;
+    setPushUpdating(true);
+    setPushMessage(null);
+    setPushBlocked(false);
+    try {
+      const result = await enablePush();
+      if (!result.ok) {
+        if (result.code === "NOTIFICATION_PERMISSION_DENIED") setPushBlocked(true);
+        setPushMessage({ kind: "error", text: result.reason });
+        setPushHelp({ reason: result.reason, steps: buildPushHelpSteps(result.code) });
+        setPushHelpOpen(true);
+        return;
+      }
+      setPushEnabled(true);
+      // Already subscribed now, so send the test the user was actually after.
+      const test = await sendTestPush();
+      if (!test.ok) setPushMessage({ kind: "error", text: test.reason });
+    } catch {
+      setPushMessage({ kind: "error", text: "Something went wrong. Try again." });
+    } finally {
+      setPushUpdating(false);
+    }
+  };
+
   const sendTest = async () => {
     if (pushTesting) return;
     setPushTesting(true);
@@ -457,7 +514,7 @@ export function NotificationsPage() {
       : notifications;
 
   return (
-    <div className="mx-auto max-w-3xl space-y-5 pt-8 md:pt-0">
+    <div className="mx-auto max-w-3xl space-y-5 pt-4 md:pt-0">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
         <div className="flex items-center gap-3">
@@ -486,8 +543,10 @@ export function NotificationsPage() {
         )}
       </div>
 
-      {/* Segmented tabs */}
-      <div className="grid grid-cols-2 gap-1 rounded-2xl border border-border/30 bg-card/30 p-1 backdrop-blur-sm">
+      {/* Segmented tabs. Capped and centred: stretched to the full 768px content
+          width on desktop, each tab was ~370px wide holding two words, so it
+          read as a toolbar rather than a tab switch. */}
+      <div className="mx-auto grid max-w-md grid-cols-2 gap-1 rounded-2xl border border-border/30 bg-card/30 p-1 backdrop-blur-sm">
         {(
           [
             { key: "notifications", label: "Notifications", icon: Bell },
@@ -581,7 +640,7 @@ export function NotificationsPage() {
                   : "Upload a schedule photo and you'll see its updates here."}
               </p>
               {filter !== "unread" && (
-                <Button className="mt-5" onClick={() => router.push("/capture")}>
+                <Button className="mt-5" onClick={openQuickAdd}>
                   <Camera className="mr-1.5 h-4 w-4" />
                   Upload Schedule
                 </Button>
@@ -667,47 +726,19 @@ export function NotificationsPage() {
       {/* ---------- Class Reminders tab ---------- */}
       {tab === "reminders" && (
         <>
-          {/* Push subscription control */}
-          <div
-            className={`flex items-center justify-between gap-3 rounded-2xl border px-4 py-4 transition-colors ${
-              pushEnabled
-                ? "border-green-500/30 bg-green-500/[0.06]"
-                : "border-border/30 bg-card/30"
-            }`}
-          >
-            <div className="flex items-center gap-3">
-              <span
-                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
-                  pushEnabled
-                    ? "bg-green-500/15 text-green-600"
-                    : "bg-primary/10 text-primary"
-                }`}
-              >
-                {pushEnabled ? <BellRing className="h-5 w-5" /> : <BellOff className="h-5 w-5" />}
-              </span>
-              <div>
-                <p className="text-sm font-semibold text-foreground">Class reminders</p>
-                <p className="text-xs text-muted-foreground">
-                  {pushEnabled
-                    ? "You'll get a push alert before every class."
-                    : isPushSupported()
-                      ? "Get a push alert before every class."
-                      : "Push isn't supported on this browser."}
-                </p>
-                {!pushEnabled && !isPushSupported() && (
-                  <p className="mt-1 text-[11px] text-destructive">
-                    {pushUnsupportedReasons().join(" ┬╖ ")}
-                  </p>
-                )}
-              </div>
-            </div>
-            <Toggle
-              checked={pushEnabled}
-              onChange={togglePush}
-              disabled={pushUpdating || !isPushSupported()}
-              label="Toggle class reminders"
-            />
-          </div>
+          {/* Reminders are on by default wherever push is already permitted —
+              see the auto-enable effect above. There is no on/off card: the
+              only question left is "am I on?", answered by the button below
+              (turn on + prove it) or the test row once it's on. */}
+          {!pushEnabled && isPushSupported() && !pushBlocked && !pushUpdating && (
+            <Button
+              onClick={enableAndTest}
+              disabled={pushTesting}
+              className="h-11 w-full font-semibold"
+            >
+              {pushTesting ? "Sending test…" : "Turn on reminders & send a test"}
+            </Button>
+          )}
 
           {pushMessage && (
             <p className="flex items-start gap-1.5 rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
@@ -727,8 +758,8 @@ export function NotificationsPage() {
 
           <p className="flex items-start gap-1.5 rounded-xl border border-border/40 bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
             <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            Reminders fire even when the app is closed. On iPhone, push requires
-            adding Schedly to your home screen first.
+            Alerts still work when the app is closed. On iPhone, tap Share,
+            then Add to Home Screen first.
           </p>
 
           {pushEnabled && (

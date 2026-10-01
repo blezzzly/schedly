@@ -1,14 +1,16 @@
 "use client";
 
 import * as React from "react";
-import { ChevronLeft, ChevronRight, Download, GraduationCap } from "lucide-react";
+import { ChevronLeft, ChevronRight, ClipboardPaste, Download, GraduationCap, Share2 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 
 import { Button } from "@/components/ui/button";
+import { openQuickAdd } from "@/lib/quick-add-sheet";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Skeleton as BoneSkeleton } from "boneyard-js/react";
 import { SchedulePreview } from "@/features/schedule/components/schedule-preview";
+import { ScheduleShareDialog, ScheduleImportDialog } from "@/features/schedule/components/schedule-share-dialog";
 import { EditScheduleDialog } from "@/features/dashboard/components/edit-schedule-dialog";
 import type { ClassData, ScheduleData } from "@/features/dashboard/lib/types";
 
@@ -24,6 +26,8 @@ type ScheduleSectionProps = {
   setActiveIndex: React.Dispatch<React.SetStateAction<number>>;
   scheduleRef: React.RefObject<HTMLDivElement | null>;
   captureRef: React.RefObject<HTMLDivElement | null>;
+  /** Refetch the schedules after a share-code import adds a new one. */
+  onRefresh?: () => void;
 };
 
 // Full-width timetable below the bento grid. If the user has several
@@ -41,7 +45,11 @@ export function ScheduleSection({
   setActiveIndex,
   scheduleRef,
   captureRef,
+  onRefresh,
 }: ScheduleSectionProps) {
+  const [shareOpen, setShareOpen] = React.useState(false);
+  const [importOpen, setImportOpen] = React.useState(false);
+
   return (
     <section>
       <Card>
@@ -89,7 +97,7 @@ export function ScheduleSection({
             Upload a photo of your class schedule and your timetable will appear here
             automatically.
           </p>
-          <Button className="mt-5" onClick={() => (window.location.href = "/capture")}>
+          <Button className="mt-5" onClick={openQuickAdd}>
             Upload Schedule
           </Button>
         </div>
@@ -126,6 +134,29 @@ export function ScheduleSection({
                 </button>
               </div>
             )}
+            {/* Import first — it's how a shared timetable arrives, so it leads.
+                Share, download and edit all act on the schedule you're looking
+                at, which is why they sit to its right. All four live outside the
+                captured node so the downloaded image stays exactly the
+                timetable. */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setImportOpen(true)}
+              className="shrink-0"
+            >
+              <ClipboardPaste className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">Enter code</span>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShareOpen(true)}
+              className="shrink-0"
+            >
+              <Share2 className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">Share</span>
+            </Button>
             <Button variant="outline" size="sm" onClick={onDownload} disabled={downloading} className="shrink-0">
               {downloading ? (
                 <>
@@ -169,6 +200,18 @@ export function ScheduleSection({
       >
         <SchedulePreview classes={activeClasses} filename="schedule.png" capture />
       </div>
+
+      <ScheduleShareDialog
+        open={shareOpen}
+        onOpenChange={setShareOpen}
+        scheduleId={activeSchedule?.id ?? null}
+        scheduleTitle={activeSchedule?.title?.trim() || "this schedule"}
+      />
+      <ScheduleImportDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        onImported={onRefresh}
+      />
     </section>
   );
 }

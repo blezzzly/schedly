@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 import { navGroups, type NavItem } from "@/config/navigation";
 import { useAuth } from "@/features/auth/hooks/use-auth";
 import { ThemePicker } from "@/components/theme-picker";
-import { SidebarGamification } from "@/components/sidebar-gamification";
+import { APP_VERSION } from "@/lib/version";
 import {
   Calendar,
   ArrowUp,
@@ -192,10 +192,12 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
       {/* Theme Picker */}
       <ThemePicker />
 
-      {/* Progress */}
-      <div className="px-3">
-        <SidebarGamification />
-      </div>
+      {/* Level / streak / XP used to live here. Moved to the profile sheet
+          (Schedly Stats): the sidebar shows on every dashboard page and is the
+          first thing to go when the window narrows, and a static block of four
+          zeros was taking vertical space that navigation needed. It also fired
+          a `getGamificationProfile()` server action on every single page load
+          for a value most people never look at. */}
 
       {/* User */}
       <div className="px-4 pb-4 space-y-1.5">
@@ -227,7 +229,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
 
       {/* Footer */}
       <div className="border-t border-sidebar-border/70 px-5 py-3">
-        <p className="text-[11px] text-sidebar-foreground/30">Schedly v0.1.0</p>
+        <p className="text-[11px] text-sidebar-foreground/30">Schedly v{APP_VERSION}</p>
       </div>
     </aside>
   );

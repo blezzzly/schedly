@@ -219,7 +219,7 @@ export default function SyllabusDetailPage({ params }: { params: Promise<{ id: s
 
   if (!syllabus) {
     return (
-      <div className="mx-auto w-full max-w-4xl pt-8 md:pt-0">
+      <div className="mx-auto w-full max-w-4xl pt-4 md:pt-0">
         <p className="text-muted-foreground mb-4">Syllabus not found</p>
         <Link href="/syllabus">
           <Button size="sm">Back to Syllabus</Button>

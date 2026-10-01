@@ -2,10 +2,10 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { AppNavPanel } from "@/components/app-nav-panel";
 import { TextField } from "@/components/ui/text-field";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Plus, Trash2, Calculator, RotateCcw } from "lucide-react";
-import { AppNavPanel } from "@/components/app-nav-panel";
 import { HeaderAvatar } from "@/components/header-avatar";
 import { NotificationBell } from "@/components/notification-bell";
 
@@ -173,7 +173,7 @@ export default function GWACalculatorPage() {
   const target = parseFloat(targetGWA) || 0;
 
   return (
-    <div className="mx-auto w-full max-w-6xl pt-8 md:pt-0">
+    <div className="mx-auto w-full max-w-6xl pt-4 md:pt-0">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 sm:mb-8">
         <div className="flex items-start gap-3">
           <HeaderAvatar />
@@ -186,17 +186,24 @@ export default function GWACalculatorPage() {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <select
-            value={scaleId}
-            onChange={(e) => handleScaleChange(e.target.value)}
-            className="h-9 rounded-lg border border-input bg-card px-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
-            aria-label="Grading system"
-          >
-            {Object.values(GRADING_SCALES).map((s) => (
-              <option key={s.id} value={s.id}>{s.label}</option>
-            ))}
-          </select>
+        <div className="flex shrink-0 items-center gap-2">
+          {/* Labelled visually rather than only via aria-label. This picklist decides
+              whether 5.00 is best or worst, so getting it wrong silently flips
+              every number on the page — it needs to be readable as a control,
+              not guessed at. */}
+          <div className="flex items-center gap-2">
+            <span className="hidden text-sm text-muted-foreground sm:inline">Scale</span>
+            <select
+              value={scaleId}
+              onChange={(e) => handleScaleChange(e.target.value)}
+              className="h-9 rounded-lg border-2 border-foreground/70 bg-card px-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
+              aria-label="Grading system"
+            >
+              {Object.values(GRADING_SCALES).map((s) => (
+                <option key={s.id} value={s.id}>{s.label}</option>
+              ))}
+            </select>
+          </div>
           <Button variant="outline" size="sm" onClick={resetAll}>
             <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
             Reset
@@ -206,9 +213,9 @@ export default function GWACalculatorPage() {
       </div>
 
       <div className="flex flex-col gap-6 md:flex-row md:items-start">
-        <AppNavPanel />
 
-        <div className="min-w-0 flex-1 mx-auto w-full max-w-3xl space-y-6 md:mx-0">
+        <AppNavPanel />
+        <div className="min-w-0 flex-1 mx-auto w-full max-w-6xl space-y-6">
       {/* Previous GWA */}
       <Card>
         <CardHeader className="pb-3">
@@ -303,9 +310,9 @@ export default function GWACalculatorPage() {
       </Card>
 
       {/* Results */}
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid items-stretch gap-4 sm:grid-cols-3">
         <Card className="bg-primary/5">
-          <CardContent className="flex flex-col items-center pt-6 pb-4">
+          <CardContent className="flex h-full flex-col items-center justify-center pt-6 pb-4">
             <Calculator className="mb-2 h-5 w-5 text-primary" />
             <p className="text-xs text-muted-foreground">Semester GWA</p>
             <p className="text-3xl font-bold text-primary">{gwa}</p>
@@ -314,7 +321,7 @@ export default function GWACalculatorPage() {
         </Card>
 
         <Card>
-          <CardContent className="flex flex-col items-center pt-6 pb-4">
+          <CardContent className="flex h-full flex-col items-center justify-center pt-6 pb-4">
             <Calculator className="mb-2 h-5 w-5 text-muted-foreground" />
             <p className="text-xs text-muted-foreground">Cumulative GWA</p>
             <p className="text-3xl font-bold text-foreground">{cumulativeGWA}</p>
@@ -322,8 +329,11 @@ export default function GWACalculatorPage() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardContent className="space-y-3 pt-6 pb-4">
+        {/* Sibling of the two read-only result cards, so it shares their height
+            instead of stretching to the full row when the "needed GWA" line
+            appears below the field. */}
+        <Card className="h-full">
+          <CardContent className="flex h-full flex-col justify-center space-y-3 pt-6 pb-4">
             <TextField
               label="Target GWA"
               inputClassName="text-center text-lg font-bold"

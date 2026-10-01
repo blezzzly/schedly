@@ -22,6 +22,8 @@ export async function getPublicProfile(username: string): Promise<PublicProfile>
   const user = await db.user.findUnique({
     where: { username: clean },
     select: {
+      // Needed to keep guests off this page — see the isAnonymous check below.
+      isAnonymous: true,
       name: true,
       username: true,
       firstName: true,
@@ -36,6 +38,13 @@ export async function getPublicProfile(username: string): Promise<PublicProfile>
   });
 
   if (!user) return null;
+
+  // Guests have no public profile. Their handle is a throwaway identity, not
+  // something they chose to be findable by, so they read as "not found" here.
+  // (The handle space is also widened to four digits as defence in depth — see
+  // `allocateGuestHandle` — but this check is what actually keeps guests off the
+  // public profile page.)
+  if (user.isAnonymous) return null;
 
   return {
     name: user.name,

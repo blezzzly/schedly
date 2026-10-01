@@ -93,7 +93,7 @@ export default function FeedbackPage() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl pt-8 md:pt-0">
+    <div className="mx-auto max-w-2xl pt-4 md:pt-0">
       <div className="mb-6 flex flex-wrap items-start justify-between gap-3 sm:mb-8">
         <div className="flex items-start gap-3">
           <HeaderBack to="/settings?tab=support" />

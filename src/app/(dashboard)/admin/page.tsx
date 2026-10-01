@@ -30,6 +30,10 @@ import { Spinner } from "@/components/ui/spinner";
 import { HeaderBack } from "@/components/header-back";
 import { NotificationBell } from "@/components/notification-bell";
 import { friendlyError } from "@/server/lib/friendly-error";
+import {
+  AdminSectionRail,
+  type AdminSectionId,
+} from "@/components/admin-section-rail";
 import { cn } from "@/lib/utils";
 
 type AdminUser = {
@@ -113,6 +117,10 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [visibleCount, setVisibleCount] = useState(5);
+  // Which of the six sections is showing. Plain component state, not a route:
+  // the admin page stays one page and one data load, and switching sections
+  // doesn't unmount the others' loaded data.
+  const [section, setSection] = useState<AdminSectionId>("overview");
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [confirmPassword, setConfirmPassword] = useState("");
   const [confirmError, setConfirmError] = useState("");
@@ -292,7 +300,7 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl pt-8 md:pt-0">
+    <div className="mx-auto max-w-6xl pt-4 md:pt-0">
       <BoneSkeleton
         name="admin-page"
         loading={loading}
@@ -313,7 +321,16 @@ export default function AdminPage() {
         <NotificationBell variant="inline" className="hidden md:flex" />
       </div>
 
-      <div className="space-y-6">
+      <div className="flex items-start gap-4 md:gap-5">
+        <AdminSectionRail
+          active={section}
+          onChange={setSection}
+          counts={{ feedback: stats?.feedback }}
+        />
+
+      <div className="min-w-0 flex-1 space-y-6">
+          {/* Overview */}
+          {section === "overview" && (
           <section className="space-y-3">
               <SectionHeader
                 icon={LayoutDashboard}
@@ -395,8 +412,10 @@ export default function AdminPage() {
                 </CardContent>
               </Card>
             </section>
+          )}
 
           {/* Broadcast */}
+          {section === "broadcast" && (
           <section className="space-y-3">
               <SectionHeader
                 icon={Radio}
@@ -454,8 +473,10 @@ export default function AdminPage() {
                 </CardContent>
               </Card>
             </section>
+          )}
 
           {/* Feedback */}
+          {section === "feedback" && (
           <section className="space-y-4">
               <SectionHeader
                 icon={MessageSquare}
@@ -536,8 +557,10 @@ export default function AdminPage() {
                 </div>
               )}
             </section>
+          )}
 
           {/* Users */}
+          {section === "users" && (
           <section className="space-y-3">
               <SectionHeader
                 icon={Users}
@@ -636,8 +659,10 @@ export default function AdminPage() {
               </CardContent>
             </Card>
             </section>
+          )}
 
           {/* Service Limits */}
+          {section === "limits" && (
           <section className="space-y-3">
               <SectionHeader
                 icon={Gauge}
@@ -691,8 +716,10 @@ export default function AdminPage() {
                 </div>
               )}
             </section>
+          )}
 
           {/* Test Pop-ups */}
+          {section === "popups" && (
           <section className="space-y-4">
               <SectionHeader
                 icon={Megaphone}
@@ -711,7 +738,9 @@ export default function AdminPage() {
                 ))}
               </div>
             </section>
-          </div>
+          )}
+      </div>
+      </div>
         </BoneSkeleton>
 
       {confirmId && (

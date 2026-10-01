@@ -92,6 +92,41 @@ export async function checkRateLimitDb(
   }
 }
 
+// Read a rate-limit window WITHOUT incrementing it.
+//
+// `checkRateLimitDb` increments on every call, which makes it unusable as a
+// pre-flight check: a rejected request still burns quota, and a request that
+// fails downstream is charged for work it never did. Use this to decide
+// whether to proceed, then call `checkRateLimitDb` to commit only once the
+// work actually succeeded.
+//
+// Fails OPEN if the DB is unreachable: a counter read must never be the reason
+// a legitimate user is turned away.
+export async function peekRateLimitDb(
+  key: string,
+  maxRequests: number,
+  windowMs: number = 60_000,
+): Promise<{ allowed: boolean; remaining: number; count: number }> {
+  const windowStart = new Date(Math.floor(Date.now() / windowMs) * windowMs);
+
+  try {
+    const { db } = await import("@/server/db/client");
+    const row = await db.rateLimitHit.findUnique({
+      where: { key_windowStart: { key, windowStart } },
+      select: { count: true },
+    });
+    const count = row?.count ?? 0;
+    return {
+      allowed: count < maxRequests,
+      remaining: Math.max(0, maxRequests - count),
+      count,
+    };
+  } catch (err) {
+    console.error("[RATE_LIMIT_DB_PEEK]", err);
+    return { allowed: true, remaining: maxRequests, count: 0 };
+  }
+}
+
 const CSRF_HEADER = "x-csrf-protection";
 const CSRF_VALUE = "1";
 

@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState } from "react";
 import Link from "next/link";
@@ -47,7 +47,7 @@ export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState(initialTab);
 
   return (
-    <div className="mx-auto max-w-4xl pt-8 md:pt-0">
+    <div className="mx-auto max-w-4xl pt-4 md:pt-0">
       <BoneSkeleton
         name="settings-page"
         loading={isLoading}
@@ -337,7 +337,11 @@ function DeleteAccountCard({ username }: { username: string }) {
   const [error, setError] = useState("");
   const router = useRouter();
 
-  const matches = phrase.trim() === username;
+  // The field shows a decorative "@", so people naturally type it. Accept it
+  // rather than failing with "doesn't match" while they look at the very hint
+  // we put there.
+  const typed = phrase.trim().replace(/^@+/, "");
+  const matches = typed === username;
 
   async function handleDelete() {
     if (!matches) return;
@@ -375,9 +379,18 @@ function DeleteAccountCard({ username }: { username: string }) {
         <div className="space-y-2">
           <TextField
             label="Type your username to confirm"
+            leading="@"
             value={phrase}
             onChange={(e) => setPhrase(e.target.value)}
-            className={matches ? "border-green-500/50" : undefined}
+            placeholder={username}
+            autoComplete="off"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            // `inputClassName`, not `className`: `className` lands on TextField's
+            // wrapper div, so the green "matched" border this card has always
+            // tried to show was being applied to an element with no border.
+            inputClassName={matches ? "border-green-500" : undefined}
           />
           {matches && (
             <p className="text-xs font-medium text-green-600 dark:text-green-400">

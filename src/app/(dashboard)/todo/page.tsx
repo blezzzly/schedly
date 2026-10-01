@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { AppNavPanel } from "@/components/app-nav-panel";
 import { TextField } from "@/components/ui/text-field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,7 +11,6 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, Trash2, ListTodo, CircleDot, CalendarDays, CheckCircle2, Pencil, Check, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTodos } from "@/features/todo/use-todos";
-import { AppNavPanel } from "@/components/app-nav-panel";
 import { HeaderAvatar } from "@/components/header-avatar";
 import { NotificationBell } from "@/components/notification-bell";
 
@@ -100,7 +100,7 @@ export default function TodoPage() {
   const todoCount = todos.length;
 
   return (
-    <div className="mx-auto w-full max-w-6xl pt-8 md:pt-0">
+    <div className="mx-auto w-full max-w-6xl pt-4 md:pt-0">
       <div className="mb-6 flex flex-wrap items-start justify-between gap-x-3 gap-y-2 sm:mb-8">
         <div className="flex items-start gap-3">
           <HeaderAvatar />
@@ -129,9 +129,9 @@ export default function TodoPage() {
       </div>
 
       <div className="flex flex-col gap-6 md:flex-row md:items-start">
-        <AppNavPanel />
 
-        <div className="min-w-0 flex-1 mx-auto w-full max-w-3xl space-y-4 md:mx-0">
+        <AppNavPanel />
+        <div className="min-w-0 flex-1 mx-auto w-full max-w-3xl space-y-4">
 
           {/* Add Task Card */}
           <div className="rounded-2xl border-2 border-foreground/70 bg-card shadow-[3px_3px_0_0_#401f32] transition-shadow hover:shadow-none p-5">

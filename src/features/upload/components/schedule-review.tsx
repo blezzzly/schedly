@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/features/auth/hooks/use-auth";
 import type { ExtractedClass } from "@/features/upload/hooks/use-upload";
 import { generateShortName } from "@/lib/abbreviations";
+import { cn } from "@/lib/utils";
 import { saveDesignState } from "@/features/upload/lib/design-state";
 import { PALETTE } from "@/features/upload/lib/palette";
 import { Button } from "@/components/ui/button";
@@ -25,6 +26,12 @@ const DAY_FULL: Record<string, string> = {
 type Props = {
   classes: ExtractedClass[];
   designImageUrl?: string;
+  /**
+   * Pin the Cancel/Save row to the bottom of the scroll area. Used inside the
+   * bottom sheet, where the form is tall enough that Save would otherwise sit
+   * below the fold with no way to reach it without scrolling to the bottom.
+   */
+  stickyActions?: boolean;
   onUpdate: (index: number, updated: ExtractedClass) => void;
   onRemove: (index: number) => void;
   onAdd: () => void;
@@ -33,7 +40,8 @@ type Props = {
 };
 
 export function ScheduleReview({
-  classes, designImageUrl, onUpdate, onRemove, onAdd, onSave, onCancel,
+  classes, designImageUrl, stickyActions = false,
+  onUpdate, onRemove, onAdd, onSave, onCancel,
 }: Props) {
   const router = useRouter();
   const { user: authUser } = useAuth();
@@ -330,7 +338,16 @@ export function ScheduleReview({
       )}
 
       {/* ── Actions ── */}
-      <div className="flex gap-3">
+      <div
+        className={cn(
+          "flex gap-3",
+          // `sticky` needs the scroll container to be an ancestor, which the
+          // bottom sheet's scroller is. The negative margin lets the bar span the
+          // full sheet width, cancelled out by the padding the sheet view adds.
+          stickyActions &&
+            "sticky bottom-0 -mx-4 border-t border-border/50 bg-card/95 px-4 pt-3 pb-1 backdrop-blur-sm"
+        )}
+      >
         <Button variant="outline" onClick={onCancel} disabled={saving} className="flex-1">
           Cancel
         </Button>

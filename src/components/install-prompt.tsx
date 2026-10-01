@@ -87,10 +87,9 @@ export function InstallPrompt() {
     window.addEventListener("beforeinstallprompt", onPrompt);
     window.addEventListener("appinstalled", onInstalled);
 
-    // Show the prompt on every visit until the user actually installs the
-    // app. "Not now" only hides it for the current session. Popped almost
-    // immediately so it's the first thing users see after escaping Facebook's
-    // in-app browser into Chrome.
+    // Show the sheet unless this device already said no (or already installed).
+    // Popped almost immediately so it's the first thing users see after
+    // escaping Facebook's in-app browser into Chrome.
     const timer = setTimeout(() => {
       if (!localStorage.getItem(DISMISS_KEY)) {
         setIos(isIOS());
@@ -109,9 +108,21 @@ export function InstallPrompt() {
   if (pathname?.startsWith("/onboarding")) return null;
   if (isStandaloneApp()) return null;
 
+  /**
+   * "Not now" / the ✕ button — and tapping the backdrop.
+   *
+   * Writes DISMISS_KEY so the sheet is gone for good on this device, across
+   * browser restarts. It used to only call setVisible(false), which meant the
+   * sheet popped up again 600ms into every single visit (see the timer above)
+   * until the app was actually installed — so anyone who said "not now" was
+   * asked again forever. Only clearing site data brings it back.
+   */
   const dismiss = () => {
-    // Session-only dismiss: the prompt returns on the next visit until the
-    // app is actually installed (see appinstalled handler above).
+    try {
+      localStorage.setItem(DISMISS_KEY, "1");
+    } catch {
+      // Private mode / storage disabled — the sheet still hides for this visit.
+    }
     setVisible(false);
   };
 

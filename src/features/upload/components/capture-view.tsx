@@ -2,11 +2,10 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { useAuth } from "@/features/auth/hooks/use-auth";
-import { useUpload } from "@/features/upload";
-import { ScheduleReview } from "@/features/upload";
-import type { ExtractedClass } from "@/features/upload";
+import { useUpload } from "@/features/upload/hooks/use-upload";
+import { ScheduleReview } from "@/features/upload/components/schedule-review";
+import type { ExtractedClass } from "@/features/upload/hooks/use-upload";
 import { saveSchedule, type SaveScheduleResult } from "@/app/(dashboard)/classes/actions";
 import { Button } from "@/components/ui/button";
 import { TextField } from "@/components/ui/text-field";
@@ -40,6 +39,13 @@ import {
 
 type Phase = "upload-select" | "review";
 
+export type CaptureViewProps = {
+  /** Called when the user dismisses the panel before saving. */
+  onClose?: () => void;
+  /** Called after a schedule is saved, before routing to /classes. */
+  onSaved?: () => void;
+};
+
 function ConfidenceBadge({ confidence }: { confidence: number }) {
   const color =
     confidence >= 0.8 ? "bg-green-200 dark:bg-green-900/60 border-green-300 dark:border-green-700 text-green-800 dark:text-green-300" :
@@ -53,14 +59,12 @@ function ConfidenceBadge({ confidence }: { confidence: number }) {
   );
 }
 
-export default function CapturePage() {
+export function CaptureView({ onClose, onSaved }: CaptureViewProps) {
   const router = useRouter();
   const { user, isLoading: authLoading } = useAuth();
   const u = user as ({ id?: string } & Record<string, unknown>) | null;
 
   const [phase, setPhase] = useState<Phase>("upload-select");
-  const autoOpenPickerRef = useRef<"camera" | "file" | null>(null);
-  const [autoOpenPicker, setAutoOpenPicker] = useState(0);
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -78,7 +82,7 @@ export default function CapturePage() {
   const userId = (u as { id?: string } | null)?.id || "anon";
 
   // Resume an in-progress review (e.g., after coming back from the design
-  // editor, which unmounts this page and clears its React state).
+  // editor, which unmounts this view and clears its React state).
   const resumedRef = useRef(false);
   useEffect(() => {
     if (authLoading || resumedRef.current) return;
@@ -124,7 +128,7 @@ export default function CapturePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, userId]);
 
-  // Pre-warm tesseract.js as soon as the page loads. Runs in parallel with
+  // Pre-warm tesseract.js as soon as the view loads. Runs in parallel with
   // everything else so it never blocks the UI. Worker stays warm for 10 min.
   useEffect(() => {
     if (authLoading) return;
@@ -185,34 +189,6 @@ export default function CapturePage() {
     clearProcessingStarted(userId);
   };
 
-  // The center camera button re-routes here and triggers auto-open.
-  useEffect(() => {
-    const onQuickAdd = () => {
-      removeFile();
-      setValidationIssues([]);
-      clearReviewState(userId);
-      setPhase("upload-select");
-      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-      autoOpenPickerRef.current = isMobile ? "camera" : "file";
-      setAutoOpenPicker((n) => n + 1);
-    };
-    window.addEventListener("schedly:quickadd", onQuickAdd);
-    return () => window.removeEventListener("schedly:quickadd", onQuickAdd);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId]);
-
-  // Auto-click the file input when triggered by the quickadd event
-  useEffect(() => {
-    if (!autoOpenPickerRef.current) return;
-    const type = autoOpenPickerRef.current;
-    autoOpenPickerRef.current = null;
-    if (type === "camera") {
-      document.getElementById("upload-camera")?.click();
-    } else {
-      document.getElementById("upload-file")?.click();
-    }
-  }, [autoOpenPicker]);
-
   const handleUpload = async () => {
     if (!selectedFile) return;
     clearProcessingStarted(userId);
@@ -255,6 +231,9 @@ export default function CapturePage() {
       clearReviewState(userId);
       clearUploadState(userId);
       clearProcessingStarted(userId);
+      // Close the sheet before navigating so it isn't left mounted over the
+      // classes list on the way out.
+      onSaved?.();
       router.push("/classes");
       return;
     } else {
@@ -309,22 +288,34 @@ export default function CapturePage() {
         : Math.max(1, Math.min(10, Math.round((progress / 100) * 10)));
 
   return (
-    <div className="mx-auto max-w-2xl space-y-4 pt-8 md:pt-0 min-h-[calc(100vh-8rem)] flex flex-col">
+    // `min-h-full` fills the panel's scroll area. Without a height here the
+    // inner `flex-1 … justify-center` has nothing to distribute, so the card
+    // sits top-aligned instead of centred. `px-4` keeps the review form off the
+    // screen edges, and gives the sticky action bar inside it a padding to
+    // cancel out against.
+    <div className="mx-auto flex min-h-full w-full max-w-2xl flex-col px-4 pb-6">
       {/* === REVIEW === */}
       {phase === "review" && (
-        <>
-        <div className="mb-4 flex items-center justify-between">
-          <Link
-            href="/classes"
-            aria-label="Back to classes"
+        // Own spacing block — the panel root has no `space-y-*`, which would
+        // leave these stacked flush against each other.
+        <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Back"
             className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-border/60 bg-background text-foreground shadow-sm transition-colors hover:bg-muted active:scale-95"
           >
             <ArrowLeft className="h-4 w-4" />
-          </Link>
+          </button>
           <NotificationBell variant="inline" className="hidden md:inline-flex" />
         </div>
         <div className="rounded-2xl border-2 border-border bg-card p-4 shadow-sm space-y-3">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Uploaded Schedule</p>
+            {/* "Create manually instead" never uploads anything, so labelling
+                the card "Uploaded Schedule" there was just wrong. */}
+            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+              {previewUrl ? "Uploaded Schedule" : "Schedule Details"}
+            </p>
             <div className="flex gap-4">
               {/* Left: image thumbnail */}
               {previewUrl && (
@@ -384,13 +375,14 @@ export default function CapturePage() {
         <ScheduleReview
           classes={extractedClasses}
           designImageUrl={previewUrl ?? upload?.fileUrl}
+          stickyActions
           onUpdate={updateExtractedClass}
           onRemove={removeExtractedClass}
           onAdd={addExtractedClass}
           onSave={handleSave}
           onCancel={handleBackToSelect}
         />
-        </>
+        </div>
       )}
 
       {/* === UPLOAD SELECT === */}
@@ -398,14 +390,17 @@ export default function CapturePage() {
         <div className="flex flex-1 flex-col items-center justify-center text-center">
           {!selectedFile ? (
             <div className="w-full max-w-sm space-y-3">
+              {/* Back button, top-left, matching the profile sheet. There's no
+                  route behind this panel any more, so it simply dismisses. */}
               <div className="flex items-center justify-between">
-                <Link
-                  href="/dashboard"
-                  aria-label="Back to dashboard"
+                <button
+                  type="button"
+                  onClick={onClose}
+                  aria-label="Back"
                   className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-border/60 bg-card text-muted-foreground shadow-sm transition-colors hover:bg-card hover:text-foreground"
                 >
                   <ArrowLeft className="h-4 w-4" />
-                </Link>
+                </button>
                 <div className="w-9" />
               </div>
               <div className="relative rounded-2xl border-2 border-border bg-card shadow-sm p-6">
@@ -535,7 +530,7 @@ export default function CapturePage() {
                     <ReportErrorButton
                       context="Schedule upload / extraction"
                       errorMessage={upload.error ?? ""}
-                      page="/capture"
+                      page="quick-add"
                     />
                   </div>
                 </div>

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { auth } from "@/server/lib/auth";
+import { resolveLiveUserId } from "@/server/lib/live-user";
 import {
   savePushSubscription,
   deletePushSubscription,
@@ -16,13 +17,20 @@ export async function POST(request: NextRequest) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
 
+  // A cached session can outlive its user row; writing with that id would fail
+  // the push_subscriptions_user_id_fkey and surface as an opaque 500.
+  const userId = await resolveLiveUserId(session.user.id);
+  if (!userId) {
+    return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+  }
+
   const body = await request.json().catch(() => null);
   const input = validateSubscriptionInput(body);
   if (!input) {
     return NextResponse.json({ error: "INVALID_SUBSCRIPTION" }, { status: 400 });
   }
 
-  await savePushSubscription(session.user.id, input);
+  await savePushSubscription(userId, input);
   return NextResponse.json({ ok: true });
 }
 

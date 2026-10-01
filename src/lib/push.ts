@@ -94,16 +94,18 @@ function base64UrlOf(bytes: ArrayBuffer | ArrayBufferView | null | undefined): s
  *  push subscription. */
 export async function ensureServiceWorker(): Promise<ServiceWorkerRegistration | null> {
   try {
-    // Development only: the SW caches `_next/static` chunks cache-first and
-    // RSC payloads stale-while-revalidate, but dev chunk URLs change on every
-    // server restart — an active SW then serves stale module factories.
-    // Register only in production builds.
-    if (process.env.NODE_ENV !== "production") return null;
+    // Dev registers the worker too, but with a `?dev=1` query. The worker sees
+    // that flag and skips ALL caching, so push can be exercised on localhost
+    // while dev chunk URLs still resolve from the network — a cache-first
+    // worker would serve stale module factories after every server restart.
+    // Production registers the same worker without the query and caches
+    // normally.
+    const swUrl = process.env.NODE_ENV === "production" ? "/sw.js" : "/sw.js?dev=1";
 
-    // Register the app SW (a no-op when it already exists, but it still
-    // re-checks for post-deploy updates in the background — without forcing an
-    // immediate worker replacement that would abort an in-flight subscribe).
-    const reg = await navigator.serviceWorker.register("/sw.js", { updateViaCache: "none" });
+    // A no-op when the worker already exists, but it still re-checks for
+    // post-deploy updates in the background — without forcing an immediate
+    // worker replacement that would abort an in-flight subscribe().
+    const reg = await navigator.serviceWorker.register(swUrl, { updateViaCache: "none" });
 
     // Wait until an active worker is actually ready before returning. Creating
     // a push subscription while the worker is still installing or being
@@ -225,7 +227,8 @@ export async function enablePush(): Promise<PushResult> {
         return {
           ok: false,
           code: "SERVICE_WORKER_NOT_READY",
-          reason: "The app's background service is still starting up. Refresh, then try again.",
+          reason:
+            "Couldn't attach to the app's background worker. Close and reopen the app, then try again.",
         };
       }
 
@@ -265,7 +268,9 @@ export async function enablePush(): Promise<PushResult> {
         return {
           ok: false,
           code: "SUBSCRIPTION_FAILED",
-          reason: `Couldn't subscribe this device (${name || "unknown error"}). Check your connection and try again.`,
+          // No raw error name in the copy — it's browser jargon that means
+          // nothing to a user. `name` is still logged for debugging.
+          reason: "Couldn't turn on reminders for this device. Check your connection and try again.",
         };
       }
     } finally {
