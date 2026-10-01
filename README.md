@@ -1,36 +1,119 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Schedly
 
-## Getting Started
+A student schedule companion. Scan a timetable image, get a working schedule, and
+keep the rest of term organised around it.
 
-First, run the development server:
+Mobile-first and installable as a PWA. Everything works offline once loaded.
+
+## What it does
+
+- **Scan a schedule** — upload a timetable photo and it is read into a real
+  schedule you can edit. OCR runs first; AI vision is only a fallback.
+- **Today and the week** — what is next, what is free, where the gaps are.
+- **Focus timer** — pomodoro sessions that grow a tree as you go.
+- **Notes, flashcards, planner, syllabus tracking** — study tools on the same
+  account.
+- **GWA calculator** — Philippine 1.00 to 5.00 and other grading scales.
+- **Share a schedule** — six-digit codes that expire after 24 hours and work once.
+- **Public profile** — a shareable page for a username.
+
+## Stack
+
+| | |
+|---|---|
+| Framework | Next.js 16 (App Router, React 19, Turbopack) |
+| Styling | Tailwind CSS v4 |
+| Database | PostgreSQL via Prisma |
+| Auth | Better Auth (email, Google, GitHub, plus guest accounts) |
+| AI | Gemini → Groq → OpenRouter fallback chain, behind one gateway |
+| OCR | Tesseract.js, with OpenCV WASM for deskewing |
+| Storage | Backblaze B2 for image bytes, database for metadata only |
+| Jobs | BullMQ on Redis, QStash for exact-time delivery |
+| Push | Firebase Cloud Messaging + web push |
+| Email | Resend |
+| Tests | Vitest |
+
+## Getting started
 
 ```bash
+npm install
+cp .env.example .env.local
+npm run db:generate
+npm run db:migrate
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Environment
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+`.env.example` lists every variable with a placeholder value. The ones without
+a working default:
 
-## Learn More
+| Variable | Why |
+|---|---|
+| `DATABASE_URL` | PostgreSQL connection string |
+| `BETTER_AUTH_SECRET` | 32+ characters, random |
+| `BETTER_AUTH_URL` | Public origin |
+| `REDIS_URL` | BullMQ and QStash |
+| `B2_APPLICATION_KEY_ID` / `B2_APPLICATION_KEY` | Image uploads |
+| `B2_BUCKET` | Upload bucket, keep it private |
 
-To learn more about Next.js, take a look at the following resources:
+Every AI provider key is optional. With none configured, OCR alone still reads a
+schedule.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Scripts
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+| Command | Does |
+|---|---|
+| `npm run dev` | Dev server |
+| `npm run build` | `prisma generate` then production build |
+| `npm run test:run` | Vitest, once |
+| `npm run lint` | ESLint |
+| `npm run db:migrate` | Create and apply a migration |
+| `npm run db:studio` | Browse the database |
 
-## Deploy on Vercel
+## Architecture
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```
+src/
+  app/            Routes. (dashboard) is the signed-in shell.
+  components/     Shared UI, including the bottom sheet used app-wide.
+  features/       Feature modules: guest, schedule, upload, insights.
+  server/         Server-only code. Actions, AI gateway, stores.
+  lib/            Framework-free helpers, shared by both sides.
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+A few conventions worth knowing before changing anything:
+
+- **Server actions live next to the page that uses them**, under `actions.ts`.
+  Prisma and AI calls do not belong in a client component.
+- **All AI work goes through `src/server/ai/`.** Never call a provider directly.
+  The gateway owns the fallback chain, per-key circuit breakers and retries.
+- **Client components are the default.** Add `"use client"` only when a file
+  needs state, effects or a browser API.
+- **Shared components are `md:` responsive by construction.** A bottom sheet
+  becomes a centred dialog from `md` up and keeps the same hard shadow, so the
+  same component works on both without a separate desktop version.
+
+## Upload security
+
+Uploaded images are validated by magic bytes, not by the `Content-Type` header,
+since that header is attacker-controlled. Allowed formats are JPEG, PNG, GIF,
+WebP and BMP, up to 20 MB. Rate limits are applied per user.
+
+## Deployment
+
+Deployed on Vercel. A few things to know:
+
+- Two cron routes run on a schedule: `/api/cron/reminders` for class reminders
+  and `/api/cron/guest-cleanup` for expired guests and share codes. Both need
+  `CRON_SECRET`.
+- Run `npx prisma migrate deploy` before the first deploy against a new
+  database.
+
+## License
+
+All rights reserved. No license has been granted, so the default copyright rules
+apply: the code is publicly readable but not licensed for reuse. Add a `LICENSE`
+file here if you want to open it up.

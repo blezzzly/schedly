@@ -1,0 +1,5 @@
+{
+  "_comment": "Known error counts. CI fails when these go up. Lower them by hand as the debt is fixed; do not raise them.",
+  "tsc": 159,
+  "lint": 19
+}

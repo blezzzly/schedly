@@ -11,5 +11,6 @@ updates:
       - "security"
     commit-message:
       prefix: "deps"
-    reviewers:
-      - "sairwhat"
+    # `reviewers: sairwhat` was here. That account has no access to this repo, and
+    # Dependabot fails the whole config file on an unknown reviewer, which silently
+    # disables all update PRs.

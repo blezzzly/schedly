@@ -7,6 +7,12 @@ on:
     - cron: "*/5 * * * *"
   workflow_dispatch:
 
+# 288 runs a day. Without this, a slow dispatch lets the next run start while the
+# previous one is still going, and they overlap into duplicate sends.
+concurrency:
+  group: reminder-cron
+  cancel-in-progress: true
+
 jobs:
   dispatch:
     runs-on: ubuntu-latest
@@ -14,11 +20,35 @@ jobs:
       - name: Dispatch due reminders
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          APP_URL: ${{ vars.APP_URL }}
         run: |
+          # Skip quietly when unconfigured rather than failing. This runs every
+          # 5 minutes and failure sends an email, so a repo without the secret
+          # would produce 288 identical alerts a day and bury real ones.
+          #
+          # The secret is absent by default on a freshly created repository:
+          # secrets do not carry over. Add it under
+          # Settings -> Secrets and variables -> Actions.
           if [ -z "$CRON_SECRET" ]; then
-            echo "::error::CRON_SECRET secret is not configured on the repo (Settings → Secrets and variables → Actions)."
-            exit 1
+            echo "CRON_SECRET not configured. Skipping. To enable:"
+            echo "  Settings -> Secrets and variables -> Actions -> New repository secret"
+            echo "  Name: CRON_SECRET   Value: the same value as Vercel's CRON_SECRET"
+            exit 0
           fi
-          curl -fsS -o /dev/null -w "reminder cron dispatch: HTTP %{http_code}\n" \
+
+          base="${APP_URL:-https://app.schedly.shop}"
+          code=$(curl -sS -o /tmp/cron.out -w "%{http_code}" \
             -H "Authorization: Bearer $CRON_SECRET" \
-            "https://app.schedly.shop/api/cron/reminders"
+            "$base/api/cron/reminders" || echo "000")
+
+          echo "reminder cron dispatch: HTTP $code"
+          cat /tmp/cron.out
+
+          # 401/403 means the secret is wrong, which is worth an email. A 5xx is
+          # worth an email too. 2xx and 404 (route absent on a preview deploy)
+          # are not.
+          case "$code" in
+            2*|404) echo "ok"; exit 0 ;;
+            000) echo "::error::could not reach $base"; exit 1 ;;
+            *)   echo "::error::unexpected HTTP $code from /api/cron/reminders"; exit 1 ;;
+          esac

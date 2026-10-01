@@ -74,3 +74,15 @@ dev-test.log
 
 # Local design tool exports, untracked by design.
 store-assets/
+
+# One-off exports pulled from the production database. These contain real user
+# email addresses and must never be committed.
+users-*.txt
+*.emails.txt
+
+# Internal working notes. Kept locally, deliberately not published.
+CLAUDE.md
+AGENTS.md
+
+# Throwaway maintenance scripts. scripts/check-quality.mjs is NOT ignored —
+# it is the CI type/lint gate and has to be committed for the workflow to run.
