@@ -33,6 +33,7 @@ function groqSuccessResponse(content: string) {
   return { choices: [{ message: { content } }] };
 }
 
+// Timeout rationale is documented at the bottom of this block.
 describe("ai-gateway (generateWithFallback)", () => {
   beforeEach(() => {
     process.env.GEMINI_API_KEY = "test-gemini";
@@ -142,4 +143,14 @@ describe("ai-gateway (generateWithFallback)", () => {
     );
     expect(result.success).toBe(false);
   });
-});
+
+  // 20s for the whole block, because the time here is not spent in the code
+  // under test. `fetch` is mocked, so the gateway returns immediately; almost all
+  // of it is the `await import()` inside each test, which `vi.resetModules()` in
+  // beforeEach forces to re-transform ai.service on every single case.
+  //
+  // At the 5s default that re-transform lands right on the limit and the suite
+  // fails intermittently on a loaded machine or a CI runner. It passed locally
+  // and failed in CI on the same commit, which is the worst version of this bug:
+  // a red build with nothing actually wrong.
+}, 20_000);
