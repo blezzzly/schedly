@@ -1,0 +1,14 @@
+{
+  "averageAccuracy": 1,
+  "fieldAccuracies": {
+    "subject": 1,
+    "days": 1,
+    "startTime": 1,
+    "endTime": 1,
+    "room": 1,
+    "instructor": 1
+  },
+  "averageConfidence": 0,
+  "averageLatencyMs": 0.48272727272747445,
+  "failureRate": 0
+}

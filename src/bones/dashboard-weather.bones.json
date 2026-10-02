@@ -1,0 +1,50 @@
+{
+  "breakpoints": {
+    "375": {
+      "name": "dashboard-weather",
+      "viewportWidth": 110,
+      "width": 110,
+      "height": 40,
+      "bones": [
+        [
+          0,
+          0,
+          100,
+          40,
+          8
+        ]
+      ]
+    },
+    "768": {
+      "name": "dashboard-weather",
+      "viewportWidth": 241,
+      "width": 241,
+      "height": 20,
+      "bones": [
+        [
+          0,
+          0,
+          100,
+          20,
+          8
+        ]
+      ]
+    },
+    "1280": {
+      "name": "dashboard-weather",
+      "viewportWidth": 363,
+      "width": 363,
+      "height": 20,
+      "bones": [
+        [
+          0,
+          0,
+          100,
+          20,
+          8
+        ]
+      ]
+    }
+  },
+  "_hash": "03d8fcf1ec560e4d7c117200bfc5a6fd"
+}

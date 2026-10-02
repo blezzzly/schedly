@@ -1,0 +1,580 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum DayOfWeek {
+  monday
+  tuesday
+  wednesday
+  thursday
+  friday
+  saturday
+  sunday
+}
+
+enum UploadStatus {
+  pending
+  uploading
+  processing
+  completed
+  failed
+}
+
+enum NotificationType {
+  class_reminder
+  schedule_update
+  system
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email         String   @unique
+  name          String
+  username      String   @unique
+  firstName     String   @map("first_name")
+  lastName      String   @map("last_name")
+  birthdate     DateTime? @map("birthdate")
+  sex           String?   @map("sex")
+  isAdmin       Boolean   @default(false) @map("is_admin")
+  emailVerified Boolean  @default(false) @map("email_verified")
+  failedAttempts Int      @default(0) @map("failed_attempts")
+  lockedUntil   DateTime? @map("locked_until")
+  avatarUrl String?  @map("avatar_url")
+  city      String?
+  school    String?
+  course    String?
+  year      Int?
+  timezone  String   @default("Asia/Manila")
+  theme     String   @default("system")
+  notificationsEnabled Boolean @default(false) @map("notifications_enabled")
+  defaultReminderMinutes Int @default(15) @map("default_reminder_minutes")
+  reminderStartDate String? @map("reminder_start_date")
+  locationEnabled Boolean @default(false) @map("location_enabled")
+  requiresReauth Boolean @default(true) @map("requires_reauth")
+  widgetToken String? @unique @map("widget_token")
+  onboardingCompleted Boolean @default(false) @map("onboarding_completed")
+  isAnonymous  Boolean  @default(false) @map("is_anonymous")
+  guestAiUsed  Int      @default(0) @map("guest_ai_used")
+  clientType String? @map("client_type")
+  lastSeenAt DateTime? @map("last_seen_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  sessions      Session[]
+  accounts      Account[]
+  schedules     Schedule[]
+  reminders     Reminder[]
+  todos         Todo[]
+  uploads       Upload[]
+  notifications Notification[]
+  feedbacks     Feedback[]
+  pushSubscriptions PushSubscription[]
+  scheduleShares  ScheduleShare[]
+  fcmTokens        FCMToken[]
+  flashcardDecks   FlashcardDeck[]
+  flashcardProgress FlashcardProgress[]
+  focusSessions    FocusSession[]
+  userProfile      UserProfile?
+  noteFolders      NoteFolder[]
+  notes            Note[]
+  plannerEntries   PlannerEntry[]
+  syllabi          Syllabus[]
+
+  @@map("users")
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime @map("expires_at")
+  token     String   @unique
+  userId    String   @map("user_id")
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([userId])
+  @@map("sessions")
+}
+
+model Account {
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  providerId String   @map("provider_id")
+  accountId  String   @map("account_id")
+  password   String?
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, accountId])
+  @@map("accounts")
+}
+
+model Verification {
+  id         String   @id @default(uuid())
+  identifier String
+  value      String
+  expiresAt  DateTime @map("expires_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@unique([identifier])
+  @@map("verification")
+}
+
+model Schedule {
+  id           String   @id @default(uuid())
+  userId       String   @map("user_id")
+  title        String
+  semester     String?
+  academicYear String?  @map("academic_year")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  user    User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  classes Class[]
+  uploads Upload[]
+
+  @@index([userId])
+  @@map("schedules")
+}
+
+model Class {
+  id         String      @id @default(uuid())
+  scheduleId String      @map("schedule_id")
+  subject    String
+  shortName  String?     @map("short_name")
+  code       String?
+  instructor String?
+  room       String?
+  section    String?
+  block      String?
+  notes      String?
+  color      String      @default("#3b82f6")
+  startTime  DateTime    @map("start_time")
+  endTime    DateTime    @map("end_time")
+  days       DayOfWeek[]
+  createdAt  DateTime    @default(now()) @map("created_at")
+  updatedAt  DateTime    @updatedAt @map("updated_at")
+
+  schedule  Schedule   @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  reminders Reminder[]
+
+  @@index([scheduleId])
+  @@map("classes")
+}
+
+/// A short share code that lets one account copy another account's schedule.
+model ScheduleShare {
+  /// Six digits, used as the primary key so lookups are a single index hit.
+  code       String    @id
+  scheduleId String    @map("schedule_id")
+  userId     String    @map("user_id")
+  /// The schedule itself, still compressed with lib/schedule-share. Keeping the
+  /// payload here rather than only a schedule id means the code keeps working if
+  /// the owner's schedule is later edited or deleted.
+  payload    String
+  expiresAt  DateTime  @map("expires_at")
+  /// Set on a successful import. A code is single-use: a 6-digit space is only
+  /// 1M combinations, so letting one code import twice doubles the window an
+  /// attacker has to replay a leaked code.
+  usedAt     DateTime? @map("used_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
+  @@index([userId])
+  @@map("schedule_shares")
+}
+
+model Reminder {
+  id               String    @id @default(uuid())
+  classId          String    @map("class_id")
+  userId           String    @map("user_id")
+  minutesBefore    Int       @default(15) @map("minutes_before")
+  isActive         Boolean   @default(true) @map("is_active")
+  lastSentAt       DateTime? @map("last_sent_at")
+  lastStartSentAt  DateTime? @map("last_start_sent_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  class Class @relation(fields: [classId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([classId])
+  @@index([userId])
+  @@map("reminders")
+}
+
+model Todo {
+  id                   String    @id @default(uuid())
+  userId               String    @map("user_id")
+  text                 String
+  completed            Boolean   @default(false)
+  priority             String    @default("medium")
+  category             String?   @default("general")
+  dueDate              String?   @map("due_date")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  completedAt          DateTime? @map("completed_at")
+  syllabusId           String?   @map("syllabus_id")
+  syllabusRequirementId String?  @map("syllabus_requirement_id")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  syllabusRequirements SyllabusRequirement[]
+
+  @@index([userId])
+  @@index([syllabusId])
+  @@index([syllabusRequirementId])
+  @@map("todos")
+}
+
+model FlashcardDeck {
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+  title       String
+  description String?
+  subject     String?
+  cardCount   Int      @default(0) @map("card_count")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  syllabusId  String?  @map("syllabus_id")
+
+  user  User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cards Flashcard[]
+
+  @@index([userId])
+  @@index([syllabusId])
+  @@map("flashcard_decks")
+}
+
+model Flashcard {
+  id           String             @id @default(uuid())
+  deckId       String             @map("deck_id")
+  front        String
+  back         String
+  difficulty   Int                @default(0)
+  lastReviewed DateTime?          @map("last_reviewed")
+  nextReview   DateTime?          @map("next_review")
+  streak       Int                @default(0)
+  createdAt    DateTime           @default(now()) @map("created_at")
+  updatedAt    DateTime           @updatedAt @map("updated_at")
+
+  deck      FlashcardDeck        @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  progress  FlashcardProgress[]
+
+  @@index([deckId])
+  @@map("flashcards")
+}
+
+model FlashcardProgress {
+  id            String    @id @default(uuid())
+  cardId        String    @map("card_id")
+  userId        String    @map("user_id")
+  status        String    @default("new") // new, learning, reviewing, mastered
+  studyCount    Int       @default(0) @map("study_count")
+  correctCount  Int       @default(0) @map("correct_count")
+  wrongCount    Int       @default(0) @map("wrong_count")
+  lastStudiedAt DateTime? @map("last_studied_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  card Flashcard @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  user User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([cardId, userId])
+  @@index([userId])
+  @@map("flashcard_progress")
+}
+
+model FocusSession {
+  id         String    @id @default(uuid())
+  userId     String    @map("user_id")
+  duration   Int
+  completed  Boolean   @default(false)
+  xpEarned   Int       @default(0) @map("xp_earned")
+  startedAt  DateTime  @default(now()) @map("started_at")
+  completedAt DateTime? @map("completed_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("focus_sessions")
+}
+
+model UserProfile {
+  id                String   @id @default(uuid())
+  userId            String   @unique @map("user_id")
+  xp                Int      @default(0)
+  level             Int      @default(1)
+  currentStreak     Int      @default(0) @map("current_streak")
+  longestStreak     Int      @default(0) @map("longest_streak")
+  lastActiveDate    String?  @map("last_active_date")
+  totalFocusMinutes Int      @default(0) @map("total_focus_minutes")
+  totalTasksCompleted Int    @default(0) @map("total_tasks_completed")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_profiles")
+}
+
+model NoteFolder {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  name      String
+  color     String   @default("#3b82f6")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  notes Note[]
+
+  @@index([userId])
+  @@map("note_folders")
+}
+
+model Note {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  folderId  String?  @map("folder_id")
+  title     String
+  content   String   @default("")
+  pinned    Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user   User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  folder NoteFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([folderId])
+  @@map("notes")
+}
+
+model PlannerEntry {
+  id                    String    @id @default(uuid())
+  userId                String    @map("user_id")
+  title                 String
+  date                  String
+  startTime             String?   @map("start_time")
+  endTime               String?   @map("end_time")
+  type                  String    @default("task")
+  color                 String    @default("#3b82f6")
+  completed             Boolean   @default(false)
+  todoId                String?   @map("todo_id")
+  syllabusRequirementId String?   @map("syllabus_requirement_id")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  syllabusRequirements SyllabusRequirement[]
+
+  @@index([userId])
+  @@index([date])
+  @@index([syllabusRequirementId])
+  @@map("planner_entries")
+}
+
+model PushSubscription {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  endpoint  String   @unique
+  p256dh    String   @map("p256dh")
+  auth      String
+  timezone  String   @default("Asia/Manila")
+  userAgent String?  @map("user_agent")
+  device    String?  @map("device")
+  platform  String?  @map("platform")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("push_subscriptions")
+}
+
+model FCMToken {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  token     String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("fcm_tokens")
+}
+
+model Upload {
+    id           String       @id @default(uuid())
+    userId       String       @map("user_id")
+    scheduleId   String?      @map("schedule_id")
+    fileUrl      String       @map("file_url")
+    fileData     String?      @map("file_data")
+    objectKey    String?      @map("object_key")
+    fileName     String       @map("file_name")
+    fileSize     Int          @map("file_size")
+    mimeType     String       @map("mime_type")
+  status       UploadStatus @default(pending)
+  aiResult     Json?        @map("ai_result")
+  errorMessage String?      @map("error_message")
+  createdAt    DateTime     @default(now()) @map("created_at")
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  schedule Schedule? @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@map("uploads")
+}
+
+model Notification {
+  id          String           @id @default(uuid())
+  userId      String           @map("user_id")
+  type        NotificationType
+  title       String
+  body        String
+  read        Boolean          @default(false)
+  scheduledAt DateTime?        @map("scheduled_at")
+  createdAt   DateTime         @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, read])
+  @@map("notifications")
+}
+
+enum FeedbackType {
+  bug
+  feedback
+  question
+}
+
+model Feedback {
+  id        String       @id @default(uuid())
+  userId    String       @map("user_id")
+  email     String?      @map("email")
+  type      FeedbackType @default(feedback)
+  subject   String?
+  message   String
+  page      String?      @map("page")
+  status    String       @default("open") @map("status")
+  createdAt DateTime     @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("feedback")
+}
+
+// Persistent rate-limit counters shared across serverless instances.
+// Each row tracks one fixed window (start of window, rounded down) for one
+// key, so `count` is always reset when the window rolls over.
+model RateLimitHit {
+  id          String   @id @default(uuid())
+  key         String
+  windowStart DateTime @map("window_start")
+  count       Int      @default(0)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@unique([key, windowStart])
+  @@index([key])
+  @@map("rate_limit_hits")
+}
+
+// Daily usage counters for the external-service caps that gate uploads and
+// reminders (OpenRouter keys, Gemini, QStash, Backblaze B2). One row per
+// service per calendar day. Powers the admin Limits dashboard so the
+// "is the cap almost full?" question is always answerable.
+model UsageCounter {
+  id        String   @id @default(uuid())
+  service   String
+  date      String // "YYYY-MM-DD"
+  count     Int      @default(0)
+  bytes     BigInt   @default(0)
+  updatedAt DateTime @default(now()) @map("updated_at")
+
+  @@unique([service, date])
+  @@index([service])
+  @@map("usage_counters")
+}
+
+// Latest provider-side rate-limit snapshot per service, captured from response
+// headers (OpenRouter x-ratelimit-*). Authoritative for "how close is the cap"
+// even when local request counters miss failed attempts.
+model LimitSnapshot {
+  service   String   @id
+  remaining Int?
+  limit     Int?
+  resetAt   DateTime? @map("reset_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("limit_snapshots")
+}
+
+model Syllabus {
+  id           String   @id @default(uuid())
+  userId       String   @map("user_id")
+  courseName   String   @map("course_name")
+  courseCode   String?  @map("course_code")
+  section      String?  @map("section")
+  instructor   String?  @map("instructor")
+  semester     String?  @map("semester")
+  schoolYear   String?  @map("school_year")
+  department   String?  @map("department")
+  units        String?  @map("units")
+  description  String?  @map("description")
+  fileId       String?  @map("file_id")
+  fileName     String?  @map("file_name")
+  extractedAt  DateTime @default(now()) @map("extracted_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  requirements SyllabusRequirement[]
+
+  @@index([userId])
+  @@map("syllabi")
+}
+
+model SyllabusRequirement {
+  id              String   @id @default(uuid())
+  syllabusId      String   @map("syllabus_id")
+  title           String
+  description     String?  @map("description")
+  type            String   @default("other")
+  date            String?  @map("date")
+  startDate       String?  @map("start_date")
+  endDate         String?  @map("end_date")
+  week            Int?     @map("week")
+  datePrecision   String   @default("unspecified") @map("date_precision")
+  sourceText      String?  @map("source_text")
+  status          String   @default("pending")
+  addToDo         Boolean  @default(true) @map("add_to_do")
+  addReminder     Boolean  @default(false) @map("add_reminder")
+  reminderMinutes Int      @default(1440) @map("reminder_minutes")
+  todoId          String?  @map("todo_id")
+  plannerEntryId  String?  @map("planner_entry_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  syllabus Syllabus @relation(fields: [syllabusId], references: [id], onDelete: Cascade)
+  todo     Todo?       @relation(fields: [todoId], references: [id], onDelete: SetNull)
+  plannerEntry PlannerEntry? @relation(fields: [plannerEntryId], references: [id], onDelete: SetNull)
+
+  @@index([syllabusId])
+  @@index([todoId])
+  @@index([plannerEntryId])
+  @@map("syllabus_requirements")
+}

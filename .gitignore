@@ -1,0 +1,93 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# prisma
+src/generated/
+
+# runtime uploads
+/public/uploads/
+
+# docker
+docker-compose.override.yml
+
+# project specific
+CLAUDE.md
+dev-server.log
+
+# benchmark generated artifacts
+benchmark/fixtures/
+benchmark/report.json
+benchmark/report.md
+.env*
+
+# Firebase admin service account (contains a live private key)
+*-firebase-adminsdk-*.json
+firebase-admin*.json
+dev-test.log
+
+# Local dev server logs. These capture whatever the terminal printed, which can
+# include connection strings and stack traces, and none of it belongs in git.
+*.log
+
+# Local design tool exports, untracked by design.
+store-assets/
+
+# One-off exports pulled from the production database. These contain real user
+# email addresses and must never be committed.
+users-*.txt
+*.emails.txt
+export-users.cjs
+
+# Internal user documentation. Written for people using the app, not for people
+# reading the code.
+Schedly-Guide.txt
+
+# Internal working notes. Kept locally, deliberately not published.
+CLAUDE.md
+AGENTS.md
+
+# Throwaway maintenance scripts. scripts/check-quality.mjs is NOT ignored —
+# it is the CI type/lint gate and has to be committed for the workflow to run.

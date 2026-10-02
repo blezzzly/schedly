@@ -1,0 +1,12 @@
+{
+  "breakpoints": [375, 768, 1280],
+  "out": "./src/bones",
+  "color": "#e7e5e4",
+  "darkColor": "#292524",
+  "animate": "shimmer",
+  "shimmerColor": "#f5f5f4",
+  "darkShimmerColor": "#44403c",
+  "speed": "1.3s",
+  "shimmerAngle": 110,
+  "routes": ["/dashboard", "/schedule", "/profile", "/settings", "/notifications", "/admin"]
+}

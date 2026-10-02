@@ -1,0 +1,622 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+:root {
+  /* Background - plain white */
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.17 0.01 20);
+
+  /* Card / Surface - white */
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.17 0.01 20);
+
+  /* Popover */
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.17 0.01 20);
+
+  /* Primary - Rose Pink */
+  --primary: oklch(0.59 0.22 355);
+  --primary-foreground: oklch(0.99 0 0);
+
+  /* Secondary - Soft Pink */
+  --secondary: oklch(0.95 0.02 355);
+  --secondary-foreground: oklch(0.40 0.18 355);
+
+  /* Muted */
+  --muted: oklch(0.96 0.01 355);
+  --muted-foreground: oklch(0.50 0.02 355);
+
+  /* Accent */
+  --accent: oklch(0.93 0.03 355);
+  --accent-foreground: oklch(0.35 0.18 355);
+
+  /* Destructive */
+  --destructive: oklch(0.58 0.22 30);
+  --destructive-foreground: oklch(0.99 0 0);
+
+  /* Border */
+  --border: oklch(0.91 0.02 355);
+  --input: oklch(0.91 0.02 355);
+
+  /* Ring (focus) */
+  --ring: oklch(0.59 0.22 355);
+
+  /* Chart colors */
+  --chart-1: oklch(0.59 0.22 355);
+  --chart-2: oklch(0.68 0.20 340);
+  --chart-3: oklch(0.55 0.22 300);
+  --chart-4: oklch(0.70 0.15 195);
+  --chart-5: oklch(0.75 0.15 80);
+
+  /* Subject palette */
+  --subject-1: oklch(0.59 0.22 355);
+  --subject-2: oklch(0.55 0.22 300);
+  --subject-3: oklch(0.70 0.15 195);
+  --subject-4: oklch(0.75 0.15 80);
+  --subject-5: oklch(0.68 0.17 160);
+  --subject-6: oklch(0.60 0.18 250);
+  --subject-7: oklch(0.65 0.22 340);
+  --subject-8: oklch(0.72 0.18 130);
+
+  /* Sidebar */
+  --sidebar: oklch(0.965 0.012 355);
+  --sidebar-foreground: oklch(0.17 0.01 20);
+  --sidebar-accent: oklch(0.93 0.025 355);
+  --sidebar-border: oklch(0.91 0.02 355);
+
+  /* Soft blue radial background — one layer behind the whole site */
+  --app-backdrop: radial-gradient(circle at top center, rgba(59, 130, 246, 0.5), transparent 70%);
+
+  /* Dot grid, layered on top of --app-backdrop by shared pages.
+     A flat wash of colour behind a card reads as an empty screen; the grid
+     gives the surface a scale and a centre, which is what makes a shared
+     profile look composed rather than unfinished. Sized in px so it stays
+     evenly spaced at any viewport size, and coloured from --foreground so it
+     inverts correctly in dark mode instead of needing a second rule. */
+  --app-dot-grid:
+    radial-gradient(
+      circle,
+      color-mix(in oklab, var(--foreground) 10%, transparent) 1px,
+      transparent 1px
+    );
+  --app-dot-size: 18px 18px;
+
+/* Radius */
+--radius: 0.75rem;
+  --sidebar-primary: oklch(0.59 0.22 355);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --sidebar-accent-foreground: oklch(0.17 0.01 20);
+  --sidebar-ring: oklch(0.59 0.22 355);
+}
+
+@theme inline {  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-subject-1: var(--subject-1);
+  --color-subject-2: var(--subject-2);
+  --color-subject-3: var(--subject-3);
+  --color-subject-4: var(--subject-4);
+  --color-subject-5: var(--subject-5);
+  --color-subject-6: var(--subject-6);
+  --color-subject-7: var(--subject-7);
+  --color-subject-8: var(--subject-8);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-border: var(--sidebar-border);
+  --radius: 0.75rem;
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-heading: var(--font-geist-sans);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+body {
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+  background-color: #fff;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+    scroll-behavior: smooth;
+  }
+}
+
+/* Hide default browser scrollbars app-wide (scrolling still works) */
+* {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+*::-webkit-scrollbar {
+  display: none;
+}
+
+/* Allow the browser's native pull-to-refresh so pulling down at the top shows
+   the browser's own refresh icon — the user sees a clear refresh cue. The app's
+   confirmation dialog still guards against accidental reloads. In the native
+   app (no browser chrome, `is-native` on <html>) overscroll stays contained to
+   avoid rubber-banding/edge-glow. */
+html,
+body {
+  overscroll-behavior-y: auto;
+}
+.is-native,
+.is-native body {
+  overscroll-behavior-y: contain;
+}
+
+/* Full viewport height with a safe fallback: browsers without `dvh`
+   support fall back to `100vh` instead of losing the height entirely
+   (which would let the page grow and scroll on mobile). */
+.h-dvh-fallback {
+  height: 100vh;
+  height: 100dvh;
+}
+
+/* Minimum full viewport height with a safe fallback: pages grow with
+   their content, but always fill at least the device viewport. */
+.min-h-dvh-fallback {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/* Bottom sheet height: 90dvh. Tall enough for the capture/review flows to
+   have room, but leaving a clear band of the page behind it visible so it
+   still reads as a sheet rather than taking over the screen. Same vh -> dvh
+   fallback as above — inline styles can't express two values, so this has to
+   live in CSS. */
+.h-sheet {
+  height: 90vh;
+  height: 90dvh;
+}
+
+/* A shorter sheet for content that doesn't need the room — the quick-add
+   capture picker is one card plus a couple of buttons, so a near-full-height
+   sheet left it floating in empty space. Only the capture sheet uses this; the
+   profile sheet stays on `.h-sheet`.
+
+   Tuned for the initial "Upload your schedule" card, which is ~320px tall. The
+   review step is taller and scrolls inside the sheet regardless, so going much
+   below this trades away room for the edit form. */
+.h-sheet-sm {
+  height: 60vh;
+  height: 60dvh;
+}
+
+/* A sheet exactly as tall as its content, capped at the viewport. Used for
+   short panels (the guest name picker) where any fixed height is either
+   wasteful or — pushed low enough to look right — starts clipping content. */
+.h-sheet-auto {
+  max-height: 92vh;
+  max-height: 92dvh;
+}
+
+/* Custom themed scrollbar — desktop only (mobile stays hidden) */
+@media (min-width: 768px) {
+  /* Always render the window scrollbar so the custom track is visible */
+  html {
+    overflow-y: scroll;
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--primary) transparent;
+  }
+  *::-webkit-scrollbar {
+    display: block;
+    width: 10px;
+    height: 10px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: linear-gradient(
+      to bottom,
+      color-mix(in oklch, var(--primary) 80%, white 20%),
+      var(--primary)
+    );
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(
+      to bottom,
+      color-mix(in oklch, var(--primary) 95%, black 5%),
+      color-mix(in oklch, var(--primary) 85%, black 10%)
+    );
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+}
+
+@keyframes music-bar {
+  0%, 100% { transform: scaleY(0.4); }
+  50% { transform: scaleY(1); }
+}
+
+/* ===== Upload / AI processing animations ===== */
+
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+/* Smooth, fast shimmer for skeleton placeholders — replaces the slow
+   opacity pulse. The highlight band sweeps across once per cycle. */
+@keyframes skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@keyframes scan-line {
+  0% { top: 0%; opacity: 0; }
+  5% { opacity: 1; }
+  95% { opacity: 1; }
+  100% { top: 96%; opacity: 0; }
+}
+
+@keyframes bounce-dot {
+  0%, 100% { transform: translateY(0); opacity: 0.35; }
+  50% { transform: translateY(-4px); opacity: 1; }
+}
+
+@keyframes grow-pop {
+  0% { transform: scale(0.6); opacity: 0.4; }
+  60% { transform: scale(1.25); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* Gentle sway for the live tree. Slow enough to read as "alive" rather than
+   distracting — it runs for the whole focus session, so anything faster becomes
+   the thing you stare at instead of the timer. Amplitude is 2px and the motion
+   is a rotate, not a translate, so the icon stays visually anchored while the
+   leaves move. */
+@keyframes tree-sway {
+  0%, 100% { transform: rotate(-2.5deg); }
+  50% { transform: rotate(2.5deg); }
+}
+
+/* Wind shimmer that travels up the trunk. Two layers offset by half a cycle so
+   the highlight never pulses as a single block. */
+@keyframes tree-shimmer {
+  0% { opacity: 0; transform: translateY(4px); }
+  50% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-6px); }
+}
+
+/* Spring for the transport buttons. Fires on state change only (running <-> idle
+   and phase switch), not on a loop, so it reads as a response to a click rather
+   than as decoration. */
+@keyframes btn-spring {
+  0% { transform: scale(1); }
+  40% { transform: scale(0.93); }
+  70% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+@keyframes btn-spring-sm {
+  0% { transform: scale(1); }
+  45% { transform: scale(0.9); }
+  100% { transform: scale(1); }
+}
+
+@keyframes pulse-dot {
+  0%, 100% { transform: scale(0.6); opacity: 0.3; }
+  50% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes indeterminate-bar {
+  0% { left: -33%; }
+  100% { left: 100%; }
+}
+
+@layer utilities {
+  .animate-shimmer {
+    animation: shimmer 1.5s ease-in-out infinite;
+  }
+  .animate-skeleton {
+    background: linear-gradient(
+      90deg,
+      color-mix(in oklch, var(--primary) 6%, transparent) 25%,
+      color-mix(in oklch, var(--primary) 13%, transparent) 50%,
+      color-mix(in oklch, var(--primary) 6%, transparent) 75%
+    );
+    background-size: 200% 100%;
+    animation: skeleton-shimmer 1.3s ease-in-out infinite;
+  }
+  .animate-scan-line {
+    height: 3px;
+    background: linear-gradient(90deg, transparent, var(--primary), var(--primary), transparent);
+    box-shadow: 0 0 12px 2px var(--primary);
+    animation: scan-line 2s ease-in-out infinite;
+  }
+  .animate-bounce-dot {
+    animation: bounce-dot 0.9s ease-in-out infinite;
+  }
+  .animate-grow-pop {
+    animation: grow-pop 500ms ease-out;
+  }
+  .animate-tree-sway {
+    animation: tree-sway 4s ease-in-out infinite;
+    transform-origin: 50% 90%;
+  }
+  .animate-tree-shimmer {
+    animation: tree-shimmer 2.4s ease-in-out infinite;
+  }
+  .animate-btn-spring {
+    animation: btn-spring 260ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .animate-btn-spring-sm {
+    animation: btn-spring-sm 220ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+}
+
+/* Respect a reduced-motion preference. The tree still changes stage and the ring
+   still fills — only the looping decorative motion is dropped, since continuous
+   movement for the length of a focus session is exactly what this setting
+   exists to suppress. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-tree-sway,
+  .animate-tree-shimmer {
+    animation: none;
+  }
+}
+
+/* ===== Material Design 3 mobile adaptations ===== */
+/* Larger, touch-friendly base interaction targets on small screens */
+@layer base {
+  /* Respect device safe areas (notch, rounded corners, gesture bars) */
+  :root {
+    --sat: env(safe-area-inset-top, 0px);
+    --sar: env(safe-area-inset-right, 0px);
+    --sab: env(safe-area-inset-bottom, 0px);
+    --sal: env(safe-area-inset-left, 0px);
+  }
+
+  html {
+    -webkit-tap-highlight-color: transparent;
+    text-size-adjust: 100%;
+  }
+
+  /* Inputs/selects easier to tap on touch */
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
+  @media (max-width: 767px) {
+    /* Prevent accidental zoom on focus */
+    body {
+      overscroll-behavior-y: none;
+    }
+  }
+}
+
+/* PWA edge-to-edge: content respects safe areas, background extends to edges.
+   Uses the --s* custom properties so a plain browser tab (where the browser's
+   own toolbar already covers the safe areas) gets zero insets. */
+@supports (padding: max(0px)) {
+  .safe-area-content {
+    padding-top: var(--sat, env(safe-area-inset-top, 0px));
+    padding-bottom: var(--sab, env(safe-area-inset-bottom, 0px));
+    padding-left: var(--sal, env(safe-area-inset-left, 0px));
+    padding-right: var(--sar, env(safe-area-inset-right, 0px));
+  }
+}
+
+/* ===== Global press feedback: fast, smooth, tactile buttons ===== */
+@layer base {
+  button {
+    touch-action: manipulation;
+    transition:
+      transform 120ms ease,
+      background-color 200ms ease,
+      color 200ms ease,
+      border-color 200ms ease,
+      box-shadow 200ms ease;
+  }
+  button:active:not(:disabled) {
+    transform: scale(0.97);
+  }
+  button:disabled {
+    cursor: not-allowed;
+  }
+}
+
+/* ===== Copy protection removed: text selection is allowed app-wide ===== */
+
+/* Thin, themed scrollbars to feel native */
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklch, var(--foreground) 18%, transparent) transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: color-mix(in oklch, var(--foreground) 18%, transparent);
+    border-radius: 999px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  /* Hide scrollbar but keep scroll (horizontal carousels) */
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Press feedback for cards / touch surfaces */
+  .active\:scale-touch:active {
+    transform: scale(0.98);
+  }
+
+  /* Safe-area aware bottom offset for floating action buttons / bottom bars */
+  .pb-safe {
+    padding-bottom: calc(0.75rem + var(--sab));
+  }
+  .mb-safe {
+    margin-bottom: calc(0.25rem + var(--sab));
+  }
+}
+
+/* ===== Bottom navigation (MD3) — floating rounded pill, mobile only ===== */
+.bottom-nav {
+  padding-left: max(0.25rem, var(--sal));
+  padding-right: max(0.25rem, var(--sar));
+}
+
+/* ===== Sidebar slide animation (down to open, up to close) ===== */
+.sidebar-slide {
+  transition:
+    transform 300ms cubic-bezier(0.32, 0.72, 0, 1),
+    opacity 220ms ease-out;
+}
+
+/* ===== Mobile onboarding (landing <768px) animations ===== */
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-12px); }
+}
+
+@keyframes blob-drift {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(20px, -24px) scale(1.08); }
+}
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes twinkle {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.3; transform: scale(0.7); }
+}
+
+@keyframes wave-sway {
+  0%, 100% { transform: rotate(0deg); }
+  20% { transform: rotate(-5deg); }
+  45% { transform: rotate(4deg); }
+  70% { transform: rotate(-2deg); }
+}
+
+@keyframes bounce-soft {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+.animate-blob {
+  animation: blob-drift 14s ease-in-out infinite;
+}
+.animate-fade-up {
+  animation: fade-up 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.animate-twinkle {
+  animation: twinkle 2.8s ease-in-out infinite;
+}
+.animate-wave-sway {
+  animation: wave-sway 2.4s ease-in-out infinite;
+}
+.animate-bounce-soft {
+  animation: bounce-soft 2s ease-in-out infinite;
+}
+
+/* ===== Dashboard bento grid — asymmetric L-shape, responsive ===== */
+/* Always an L: the dominant tile (today's classes) spans two rows on the
+   left, with the weather and free-time tiles stacked on the right. Below
+   360px (legacy small phones) the side column can't fit next to the class
+   cards, so the grid simplifies to a full-width hero tile over two half
+   tiles — the shape stays bento, never a plain list. The page content
+   column is capped (max-w) and centered, so the grid never stretches on
+   large screens. */
+.bento-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(118px, 1fr);
+  /* Equal rows keep the bento's height constant while content swaps between
+     skeletons and real data — auto rows shift when skeleton content differs,
+     making the layout jump on load. */
+  grid-auto-rows: minmax(0, 1fr);
+  align-items: stretch;
+  gap: 0.75rem;
+}
+.bento-grid > * {
+  min-width: 0;
+}
+.bento-tile-main {
+  grid-column: 1;
+  grid-row: span 2;
+}
+@media (max-width: 359.98px) {
+  .bento-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .bento-tile-main {
+    grid-column: 1 / -1;
+    grid-row: auto;
+  }
+}
+/* The side tiles live in a ~118–220px column below sm, so their padding
+   tightens (0.625rem vs 1.25rem default) to give the content more room. */
+@media (max-width: 559.98px) {
+  .bento-grid > .bento-tile-side {
+    --card-spacing: 0.625rem;
+  }
+}
+@media (min-width: 560px) {
+  .bento-grid {
+    grid-template-columns: minmax(0, 1.5fr) minmax(220px, 1fr);
+  }
+}
+
