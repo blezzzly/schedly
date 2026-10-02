@@ -3,14 +3,41 @@ updates:
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
-      interval: "weekly"
+      # Monthly rather than weekly. On a weekly schedule this repository accumulated
+      # ten open Dependabot PRs in a single pass, and every one of them queued a CI
+      # run. Each run that failed sent an email, so an unattended batch of version
+      # bumps turned into a stream of alerts about nothing being wrong.
+      interval: "monthly"
       day: "monday"
-    open-pull-requests-limit: 10
+      time: "09:00"
+      timezone: "Asia/Manila"
+    open-pull-requests-limit: 3
     labels:
       - "dependencies"
       - "security"
     commit-message:
       prefix: "deps"
     # `reviewers: sairwhat` was here. That account has no access to this repo, and
-    # Dependabot fails the whole config file on an unknown reviewer, which silently
-    # disables all update PRs.
+    # Dependabot rejects the entire config file on an unknown reviewer, which
+    # silently disables every update PR rather than reporting anything.
+    #
+    # Major-version bumps are ignored for now. Two of them are already breaking:
+    # html2canvas-pro 1.x -> 2.x is a rewrite, and @types/node 20 -> 26 moves six
+    # majors and changes every Node type. Stacking those on top of the existing
+    # type-error debt is how a maintenance task turns into an outage. The audit
+    # output in the CI summary lists what still needs upgrading, deliberately.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    groups:
+      types:
+        patterns:
+          - "@types/*"
+        update-types:
+          - "minor"
+          - "patch"
+      patch-updates:
+        update-types:
+          - "patch"
+        patterns:
+          - "*"
