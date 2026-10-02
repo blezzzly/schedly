@@ -64,8 +64,14 @@ jobs:
             echo "Informational until the dependency tree is upgraded."
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # `npm run build`, not `npx next build`. The project's build script runs
+      # `prisma generate` first, and this repo generates its client into
+      # src/generated/prisma rather than into node_modules. Skipping the
+      # generate step leaves the client missing and the build fails on the first
+      # import. Using the project's own script also keeps CI from drifting away
+      # from what Vercel and `npm start` actually run.
       - name: Build
-        run: npx next build
+        run: npm run build
 
       - name: Tests
         run: npm run test:run

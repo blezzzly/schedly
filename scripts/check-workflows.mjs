@@ -20,7 +20,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const REQUIRED_CI_STEPS = [
   { name: "install", re: /run:\s*npm ci/ },
   { name: "type/lint gate", re: /check-quality\.mjs/ },
-  { name: "build", re: /npx next build/ },
+  { name: "build", re: /run:\s*npm run build/ },
   { name: "tests", re: /npm run test:run/ },
 ];
 
