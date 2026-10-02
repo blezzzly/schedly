@@ -46,7 +46,7 @@
     "firebase-admin": "^14.2.0",
     "framer-motion": "^13.1.1",
     "html-to-image": "^1.11.13",
-    "html2canvas-pro": "^1.6.7",
+    "html2canvas-pro": "^2.4.5",
     "ioredis": "^5.4.2",
     "ldrs": "^1.1.9",
     "lucide-react": "^1.24.0",
