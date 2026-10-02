@@ -31,7 +31,7 @@
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
     "@types/web-push": "^3.6.4",
-    "@upstash/qstash": "^2.11.3",
+    "@upstash/qstash": "^2.12.0",
     "@vercel/blob": "^2.6.1",
     "@vercel/functions": "^3.7.6",
     "bcryptjs": "^3.0.3",
