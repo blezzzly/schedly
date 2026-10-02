@@ -74,7 +74,10 @@ export async function scheduleQstashReminders(
   const baseUrl =
     process.env.NEXT_PUBLIC_APP_URL ||
     process.env.BETTER_AUTH_URL ||
-    "https://app.schedly.shop";
+    // The deployed origin. Only reached when neither env var is set, which in
+    // production means the deployment is misconfigured — but a reminder URL
+    // pointing at nothing is worse than one pointing somewhere plausible.
+    "https://schedlyapp.vercel.app";
 
   const reminders = await db.reminder.findMany({
     where: userId ? { isActive: true, userId } : { isActive: true },

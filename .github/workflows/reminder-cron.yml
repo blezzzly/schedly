@@ -36,7 +36,7 @@ jobs:
             exit 0
           fi
 
-          base="${APP_URL:-https://app.schedly.shop}"
+          base="${APP_URL:-https://schedlyapp.vercel.app}"
           code=$(curl -sS -o /tmp/cron.out -w "%{http_code}" \
             -H "Authorization: Bearer $CRON_SECRET" \
             "$base/api/cron/reminders" || echo "000")
