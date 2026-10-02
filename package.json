@@ -44,7 +44,7 @@
     "dotenv": "^17.4.2",
     "firebase": "^12.17.1",
     "firebase-admin": "^14.2.0",
-    "framer-motion": "^13.1.1",
+    "framer-motion": "^13.4.5",
     "html-to-image": "^1.11.13",
     "html2canvas-pro": "^1.6.7",
     "ioredis": "^5.4.2",
