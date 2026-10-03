@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { Check, ClipboardPaste, Copy, Share2, Upload } from "lucide-react";
 import { toast } from "sonner";
 
@@ -21,13 +21,22 @@ const CODE_LENGTH = 6;
 /**
  * Share a schedule with a six-digit code.
  *
- * The code is minted as soon as the dialog opens. Making someone press a
- * "generate" button first was a step with no decision in it — there is only one
- * thing to do here, and the code is only useful once you have it.
+ * The code is minted when you press Share, not when this dialog opens.
+ *
+ * Minting on open was wrong in two ways that only showed up in real use. It
+ * wrote a row to the database every single time the dialog was opened, including
+ * the opens where you closed it again without sharing anything. And it copied
+ * the code to the clipboard without being asked, so a six-digit number kept
+ * landing in the clipboard after opening a dialog and changing your mind about
+ * it — which then got pasted somewhere by accident. Both only happen on the
+ * open-then-dismiss path, which is exactly the path nobody tests.
+ *
+ * A press is also the honest signal: sharing is a decision, and the cost of the
+ * decision is one click rather than a silent side effect.
  *
  * The six-digit code is stored server-side rather than being the compressed
  * schedule itself: 1,000,000 combinations cannot hold a payload, so the code is
- * a lookup key. Which also means showing it costs one indexed row read.
+ * a lookup key.
  */
 export function ScheduleShareDialog({
   open,
@@ -40,9 +49,16 @@ export function ScheduleShareDialog({
   scheduleId: string | null;
   scheduleTitle: string;
 }) {
-  // Keyed per open so a code minted for an earlier schedule — or an earlier
-  // version of this one — is never shown here.
-  return <ShareBody key={`${scheduleId}:${open ? 1 : 0}`} {...{ open, onOpenChange, scheduleId, scheduleTitle }} />;
+  // Keyed per open so each visit to the dialog starts from the press again.
+  // Remounting is how the state is cleared: an effect that resets on close is a
+  // setState in an effect body, which costs a render pass and is exactly what
+  // the lint rule warns about. A key does the same work for free.
+  return (
+    <ShareBody
+      key={open ? "open" : "closed"}
+      {...{ open, onOpenChange, scheduleId, scheduleTitle }}
+    />
+  );
 }
 
 function ShareBody({
@@ -59,28 +75,18 @@ function ShareBody({
   const [code, setCode] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [minting, setMinting] = useState(false);
 
-  useEffect(() => {
-    if (!scheduleId) return;
-    let cancelled = false;
+  const mint = () => {
+    if (!scheduleId || minting) return;
+    setMinting(true);
+    setError(null);
     void createScheduleShareCode(scheduleId).then((res) => {
-      if (cancelled) return;
-      if (res.ok) {
-        setCode(res.code);
-        // Copy straight away: the overwhelmingly common reason to open this is
-        // to send the code, so making it a second click is friction for nothing.
-        void navigator.clipboard.writeText(res.code).then(
-          () => setCopied(true),
-          () => undefined,
-        );
-      } else {
-        setError(res.error);
-      }
+      setMinting(false);
+      if (res.ok) setCode(res.code);
+      else setError(res.error);
     });
-    return () => {
-      cancelled = true;
-    };
-  }, [scheduleId]);
+  };
 
   const copy = () => {
     if (!code) return;
@@ -108,38 +114,53 @@ function ShareBody({
         </DialogHeader>
 
         <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium text-foreground">Your code</span>
-            <span className="text-[11px] text-muted-foreground">Good for 24 hours. One person can use it.</span>
-          </div>
 
           {error ? (
-            <p className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
-              {error}
-            </p>
-          ) : !code ? (
-            <div className="flex h-16 items-center justify-center rounded-lg border-2 border-foreground/70 bg-muted/30">
-              <Spinner size={20} color="var(--foreground)" />
+            <div className="space-y-3">
+              <p className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+                {error}
+              </p>
+              <Button className="w-full" onClick={mint} disabled={minting}>
+                Try again
+              </Button>
             </div>
+          ) : code ? (
+            <>
+              <button
+                type="button"
+                onClick={copy}
+                className="flex h-16 w-full items-center justify-center gap-2 rounded-lg border-2 border-foreground/70 bg-muted/30 font-mono text-3xl font-bold tracking-[0.35em] text-foreground transition-colors hover:bg-muted"
+                aria-label={`Code ${code.split("").join(" ")}. Copy it.`}
+              >
+                {code}
+                {copied ? (
+                  <Check className="h-5 w-5 shrink-0 text-green-600 dark:text-green-500" />
+                ) : (
+                  <Copy className="h-5 w-5 shrink-0 text-muted-foreground" />
+                )}
+              </button>
+              <p className="text-[11px] text-muted-foreground">
+                {copied ? "Copied. You can paste it anywhere." : "Tap the code to copy it."}
+              </p>
+            </>
           ) : (
-            <button
-              type="button"
-              onClick={copy}
-              className="flex h-16 w-full items-center justify-center gap-2 rounded-lg border-2 border-foreground/70 bg-muted/30 font-mono text-3xl font-bold tracking-[0.35em] text-foreground transition-colors hover:bg-muted"
-              aria-label={`Code ${code.split("").join(" ")}. Copy it.`}
-            >
-              {code}
-              {copied ? (
-                <Check className="h-5 w-5 shrink-0 text-green-600 dark:text-green-500" />
-              ) : (
-                <Copy className="h-5 w-5 shrink-0 text-muted-foreground" />
-              )}
-            </button>
+            <>
+              <Button className="w-full" onClick={mint} disabled={minting || !scheduleId}>
+                {minting ? (
+                  <>
+                    <Spinner size={16} className="mr-2" /> Making your code
+                  </>
+                ) : (
+                  <>
+                    <Share2 className="mr-2 h-4 w-4" /> Create share code
+                  </>
+                )}
+              </Button>
+              <p className="text-[11px] text-muted-foreground">
+                One code, good for 24 hours, one person can use it.
+              </p>
+            </>
           )}
-
-          <p className="text-[11px] text-muted-foreground">
-            {copied ? "Copied. You can paste it anywhere." : "Tap the code to copy it."}
-          </p>
         </div>
       </DialogContent>
     </Dialog>

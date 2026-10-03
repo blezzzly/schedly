@@ -284,9 +284,13 @@ export function CaptureView({ onClose, onSaved }: CaptureViewProps) {
       clearUploadState(userId);
       clearProcessingStarted(userId);
       // Close the sheet before navigating so it isn't left mounted over the
-      // classes list on the way out.
+      // destination on the way out.
       onSaved?.();
-      router.push("/classes");
+      // The dashboard, not the classes list. Finishing an upload is the end of
+      // a task, and the dashboard is where you land at the start of a day and
+      // where "what's next" lives. Dropping into the classes list asked for
+      // more navigation to reach anything useful.
+      router.push("/dashboard");
       return;
     } else {
       toast.error(result.error ?? "Failed to save schedule");
