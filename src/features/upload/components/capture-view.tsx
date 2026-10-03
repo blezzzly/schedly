@@ -10,7 +10,6 @@ import { saveSchedule, type SaveScheduleResult } from "@/app/(dashboard)/classes
 import { Button } from "@/components/ui/button";
 import { TextField } from "@/components/ui/text-field";
 import { Skeleton } from "@/components/ui/skeleton";
-import { NotificationBell } from "@/components/notification-bell";
 import {
   Camera, Image as ImageIcon, AlertCircle, CheckCircle,
   Plus, RotateCcw, ArrowLeft,
@@ -56,6 +55,59 @@ function ConfidenceBadge({ confidence }: { confidence: number }) {
       <span className="font-semibold">{Math.round(confidence * 100)}% confident</span>
       <span className="opacity-60">— review as needed</span>
     </div>
+  );
+}
+
+/**
+ * The picked schedule photo, held back until the browser has actually decoded it.
+ *
+ * A schedule photo is a multi-megabyte camera image, and decoding one takes
+ * long enough to be visible. Rendering the `<img>` immediately and letting the
+ * browser sort it out showed an empty card, then a skeleton, then the picture:
+ * three frames where the user sees something other than their own upload. Since
+ * the image is already local as an object URL, waiting for `decode()` costs
+ * nothing extra and removes the flash.
+ */
+function SchedulePreviewImage({ src }: { src: string }) {
+  // Which src has finished decoding, rather than a boolean flag. A flag would
+  // have to be reset inside the effect whenever `src` changes, and a setState in
+  // an effect body is what React warns about: it costs an extra render pass and
+  // shows a frame built from two different states. Comparing against `src`
+  // during render gets the same answer with no reset and no extra pass.
+  const [decodedSrc, setDecodedSrc] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const img = new window.Image();
+    const markDecoded = () => {
+      if (!cancelled) setDecodedSrc(src);
+    };
+    img.onload = markDecoded;
+    // A decode failure still shows the element: an <img> with a broken src is
+    // more useful than a skeleton that never resolves.
+    img.onerror = markDecoded;
+    img.src = src;
+    return () => {
+      cancelled = true;
+    };
+  }, [src]);
+
+  if (decodedSrc !== src) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Skeleton className="h-40 w-full" />
+      </div>
+    );
+  }
+
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt="Schedule preview"
+      className="mx-auto h-auto w-full object-contain"
+      style={{ maxHeight: "280px" }}
+    />
   );
 }
 
@@ -308,7 +360,6 @@ export function CaptureView({ onClose, onSaved }: CaptureViewProps) {
           >
             <ArrowLeft className="h-4 w-4" />
           </button>
-          <NotificationBell variant="inline" className="hidden md:inline-flex" />
         </div>
         <div className="rounded-2xl border-2 border-border bg-card p-4 shadow-sm space-y-3">
             {/* "Create manually instead" never uploads anything, so labelling
@@ -436,10 +487,12 @@ export function CaptureView({ onClose, onSaved }: CaptureViewProps) {
                 {/* Image */}
                 <div className="relative">
                   {previewUrl ? (
-                    <>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={previewUrl} alt="Schedule preview" className="mx-auto h-auto w-full object-contain" style={{ maxHeight: "280px" }} />
-                    </>
+                    // Nothing is shown until the bitmap has actually decoded. The
+                    // browser needs the image in memory before it can paint it, so
+                    // rendering the <img> and relying on the browser to hold the
+                    // frame produced a visible skeleton flash every time the
+                    // preview was a large photo.
+                    <SchedulePreviewImage src={previewUrl} />
                   ) : (
                     <div className="flex items-center justify-center py-16">
                       <Skeleton className="h-40 w-full" />
