@@ -3,6 +3,7 @@
   "framework": "nextjs",
   "buildCommand": "npm run build",
   "installCommand": "npm ci --no-audit --no-fund",
+  "regions": ["sin1"],
   "crons": [
     {
       "path": "/api/cron/reminders",
