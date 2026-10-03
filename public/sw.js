@@ -19,7 +19,11 @@
 // page's onMessage handler, background/closed-app messages land here. We
 // render the notification ourselves so display never depends on browser
 // auto-handling of a `notification` field.
-const CACHE_NAME = "schedly-cache-v4";
+// Bump this whenever the caching logic below changes. The name is the only
+// signal the old worker gets to clear itself out: the activate handler deletes
+// caches that do not match, so a stale name here is what actually ships an old
+// offline behaviour to phones that already have the app installed.
+const CACHE_NAME = "schedly-cache-v5";
 const RSC_CACHE = `${CACHE_NAME}-rsc`;
 
 // Dev mode. The app registers this worker on localhost too — otherwise push
@@ -54,11 +58,15 @@ function isExternalImage(url) {
 // in a sensible order instead of giving up with the offline screen.
 const NAV_FALLBACKS = [
   "/dashboard",
-  "/schedule",
+  "/classes",
   "/notes",
-  "/notifications",
+  "/todo",
   "/pomodoro",
-  "/gpa",
+  "/notifications",
+  "/gwa",
+  "/planner",
+  "/flashcards",
+  "/syllabus",
   "/login",
   "/",
 ];

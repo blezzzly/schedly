@@ -61,6 +61,24 @@
         flex-direction: column;
         gap: 10px;
       }
+      /* Says what still works, not just that something broke. A dead end with no
+         information is worse than a partial one: the user needs to know whether
+         to keep using the app or go find signal. */
+      .offline-note {
+        margin-top: 18px;
+        padding: 14px 16px;
+        border-radius: 14px;
+        background: rgba(236, 72, 153, 0.06);
+        border: 1px solid rgba(236, 72, 153, 0.14);
+        font-size: 13px;
+        line-height: 1.6;
+        text-align: left;
+        color: #475569;
+      }
+      .offline-note strong {
+        color: #0f172a;
+        font-weight: 600;
+      }
       a {
         display: flex;
         align-items: center;
@@ -93,6 +111,14 @@
         No internet connection right now. Schedly will automatically reload the
         moment you&rsquo;re back online.
       </p>
+      <div class="offline-note">
+        <strong>Still works offline:</strong> your schedule, notes, to-do list and
+        GWA calculator. Anything you change is kept on this device and sent when
+        you reconnect.
+        <br /><br />
+        <strong>Needs a connection:</strong> reading a photo of a timetable, and
+        anything that generates study material.
+      </div>
       <div class="actions">
         <a class="primary" id="retry-link" href="/">Try again</a>
         <a class="ghost" id="home-link" href="/">Back to Schedly</a>
@@ -115,7 +141,10 @@
       // usually NOT cached, so point the buttons at a page that is.
       (function () {
         if (!("caches" in window)) return;
-        var paths = ["/dashboard", "/schedule", "/login", "/"];
+        // These must be routes that exist. "/schedule" was here and never has:
+        // it is /classes. A candidate that can never be cached is a wasted
+        // lookup, and it made the real fallback order unreadable.
+        var paths = ["/dashboard", "/classes", "/todo", "/notes", "/pomodoro", "/login", "/"];
         caches.keys()
           .then(function (keys) {
             var name = keys.find(function (k) {

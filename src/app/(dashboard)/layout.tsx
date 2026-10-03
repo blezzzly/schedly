@@ -121,9 +121,19 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
           reg.active?.postMessage({
             type: "PRECACHE",
             urls: [
-              // No /capture: the capture flow is a sheet now, so there's no
-              // route to precache for it.
-              "/dashboard", "/classes", "/notes", "/notifications", "/pomodoro", "/gwa",
+              // Every dashboard route that renders without network. A page that
+              // is not in this list is simply absent from the cache when the
+              // connection drops, so the user lands on whatever the service
+              // worker picked rather than the page they asked for.
+              //
+              // AI-dependent routes are deliberately included anyway: their
+              // shells render offline, and it is only the upload that cannot
+              // run. Excluding them would mean choosing between "the page is
+              // there but upload fails" and "the page is not there at all", and
+              // the first is the honest one.
+              "/dashboard", "/classes", "/notes", "/notifications", "/pomodoro",
+              "/gwa", "/todo", "/planner", "/flashcards", "/syllabus", "/settings",
+              "/feedback", "/profile",
               ...(avatar ? [avatar] : []),
             ],
           });

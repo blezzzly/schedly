@@ -243,6 +243,18 @@ export function CaptureView({ onClose, onSaved }: CaptureViewProps) {
 
   const handleUpload = async () => {
     if (!selectedFile) return;
+    // Reading a timetable needs a server: OCR and the vision fallback both run
+    // there. Refusing up front, by name, is the difference between "you're
+    // offline, this needs a connection" and a spinner that fails after a
+    // timeout with a network error the user cannot act on.
+    //
+    // The manual path is untouched by this and stays available offline, which is
+    // the point: someone on a connection-less commute can still build a schedule
+    // by typing it in.
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      toast.error("You're offline. Reading a schedule needs a connection — but you can create one manually.");
+      return;
+    }
     clearProcessingStarted(userId);
     setFakeProgress(0);
     try {
