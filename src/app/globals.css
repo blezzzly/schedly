@@ -158,6 +158,13 @@ body {
   html {
     @apply font-sans;
     scroll-behavior: smooth;
+    /* The page background belongs on <html> as well as <body>. <body> only
+       paints as far as its own content, so when a route is shorter than the
+       viewport, or the content stops at the bottom safe-area inset, the canvas
+       underneath shows through: on Android that read as a black band under the
+       app. Painting both guarantees the theme colour covers the entire screen
+       including the areas a scroll container does not reach. */
+    background-color: var(--background);
   }
 }
 
