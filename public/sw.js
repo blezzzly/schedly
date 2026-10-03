@@ -308,13 +308,20 @@ self.addEventListener("fetch", (event) => {
           const cache = await caches.open(CACHE_NAME);
           const cached = await cache.match(request);
           if (cached) return cached;
-          // The requested URL may not be cached directly (e.g. "/" was a
-          // redirect while signed in) — serve the best known app page so the
-          // user lands on Schedly, not on the offline card.
-          for (const route of NAV_FALLBACKS) {
-            const fallback = await cache.match(route);
-            if (fallback) return fallback;
-          }
+
+          // Deliberately NOT substituting another page here.
+          //
+          // This used to walk NAV_FALLBACKS and serve the first cached app page
+          // for any uncached route. The result was that tapping Notes while the
+          // connection was flaky rendered the dashboard under a /notes URL. The
+          // user tapped again, got the dashboard again, and read it as the app
+          // looping back to the dashboard with no way out.
+          //
+          // A network failure on a phone that reports itself online is common,
+          // so this path was not a rare offline case — it was the common one.
+          //
+          // The offline page is the honest answer: it says what still works and
+          // its buttons point at routes that really are cached.
           return (await cache.match("/offline.html")) || Response.error();
         }
       })()
