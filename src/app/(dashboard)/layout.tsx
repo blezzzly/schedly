@@ -190,6 +190,13 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
     if (!user) return;
     const tick = () => {
       if (document.visibilityState !== "visible") return;
+      // Skip while offline. A dead connection makes every one of these requests
+      // fail after a full timeout, so without the check the app fires a
+      // guaranteed-failing request on mount, on every focus change, and every
+      // five minutes while offline — draining the battery and the rate limit for
+      // no chance of a reply. `navigator.onLine` being true does not mean
+      // reachable, which is why the call is still wrapped.
+      if (!navigator.onLine) return;
       cachedAction("layout:dispatch", () => dispatchUserReminders(), 60_000).catch(() => {});
     };
     tick();

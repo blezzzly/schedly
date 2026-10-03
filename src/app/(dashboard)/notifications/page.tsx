@@ -12,6 +12,7 @@ import {
 import { getUserReminders, updateReminder, type UpdateReminderResult } from "@/app/(dashboard)/reminders/actions";
 import { isPushSupported, getPushState, enablePush, disablePush, sendTestPush, isIosPwa, type PushErrorCode } from "@/lib/push";
 import { programReminderAlarms } from "@/lib/notification-scheduler";
+import { withOfflineCache } from "@/lib/offline-cache";
 import {
   setNotificationDetailOpen,
 } from "@/lib/notification-detail-store";
@@ -235,7 +236,13 @@ export function NotificationsPage() {
 
   useEffect(() => {
     let active = true;
-    Promise.all([getUserSchedules(), getUserNotifications()])
+    // Cached, so the list survives a dead connection. Without it the catch below
+    // left the page in its "nothing here" state, which read as "you have no
+    // notifications" rather than "we cannot ask the server right now".
+    Promise.all([
+      withOfflineCache("schedule:list", () => getUserSchedules()),
+      withOfflineCache("notifications:list", () => getUserNotifications()),
+    ])
       .then(([, dbNotifications]) => {
         if (!active) return;
         const dbNotes = dbNotifications.map((n) => ({

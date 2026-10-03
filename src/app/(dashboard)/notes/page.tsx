@@ -13,6 +13,7 @@ import {
 } from "./actions";
 import { Button } from "@/components/ui/button";
 import { AppNavPanel } from "@/components/app-nav-panel";
+import { withOfflineCache } from "@/lib/offline-cache";
 import { Card, CardContent } from "@/components/ui/card";
 import { TextField } from "@/components/ui/text-field";
 import { Spinner } from "@/components/ui/spinner";
@@ -58,6 +59,10 @@ export default function NotesPage() {
   const [folders, setFolders] = useState<Folder[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
   const [loading, setLoading] = useState(true);
+  // Shown when there is no network and nothing cached to fall back on. Separate
+  // from `loading`, because "still fetching" and "cannot fetch at all" call for
+  // different things on screen.
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [showEditor, setShowEditor] = useState(false);
@@ -71,17 +76,39 @@ export default function NotesPage() {
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [showMobileFolders, setShowMobileFolders] = useState(false);
 
+  // Every load goes through withOfflineCache and every one of them clears
+  // `loading` in a finally.
+  //
+  // These were bare awaits. A server action that fails on a dead connection
+  // rejects, the await throws, and `setLoading(false)` below it never runs — so
+  // the page sat on its spinner indefinitely with no error and no way forward.
+  // That is the offline "glitch": it looked like the app had hung rather than
+  // lost the network, because nothing on screen said which.
   const loadFolders = useCallback(async () => {
-    const data = await getNoteFolders();
-    setFolders(data as Folder[]);
+    try {
+      const data = await withOfflineCache("notes:folders", () => getNoteFolders());
+      setFolders(data as Folder[]);
+    } catch {
+      // No cached copy on a first visit with no connection. An empty list is the
+      // honest answer: the page still works and the user can add a note.
+      setFolders([]);
+    }
   }, []);
 
   const loadNotes = useCallback(async () => {
-    const data = selectedFolder === null
-      ? await getNotes()
-      : await getNotes(selectedFolder);
-    setNotes(data as Note[]);
-    setLoading(false);
+    const key = selectedFolder === null ? "notes:all" : `notes:folder:${selectedFolder}`;
+    try {
+      const data = await withOfflineCache(key, () =>
+        selectedFolder === null ? getNotes() : getNotes(selectedFolder)
+      );
+      setNotes(data as Note[]);
+    } catch {
+      setLoadError(
+        "You're offline and these notes aren't saved on this device yet. They'll appear once you're back online."
+      );
+    } finally {
+      setLoading(false);
+    }
   }, [selectedFolder]);
 
   useEffect(() => {
@@ -331,6 +358,22 @@ export default function NotesPage() {
           {loading ? (
             <div className="flex justify-center py-16">
               <Spinner size={28} />
+            </div>
+          ) : loadError ? (
+            // Says what happened and what to do. A spinner that never resolves,
+            // or an empty state that implies "you have no notes", are both
+            // worse than an honest "this cannot load right now".
+            <div className="flex items-center justify-center py-10">
+              <div className="flex w-full min-h-[19rem] flex-col items-center justify-center rounded-2xl border-2 border-foreground/70 bg-card p-6 text-center shadow-[3px_3px_0_0_#401f32]">
+                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-muted">
+                  <StickyNoteIcon className="h-7 w-7 text-muted-foreground" />
+                </div>
+                <h3 className="text-lg font-semibold text-foreground">Can&rsquo;t load notes</h3>
+                <p className="mt-1 max-w-md text-sm text-muted-foreground">{loadError}</p>
+                <Button className="mt-6 h-11 px-6 font-medium" onClick={() => window.location.reload()}>
+                  Try again
+                </Button>
+              </div>
             </div>
           ) : filtered.length === 0 ? (
             <div className="flex items-center justify-center py-10">
