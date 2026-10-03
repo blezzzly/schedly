@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { authClient } from "@/lib/auth-client";
 import { Spinner } from "@/components/ui/spinner";
 
+import { friendlyError } from "@/server/lib/friendly-error";
 export default function ResetPasswordPage() {
   const searchParams = useSearchParams();
   const token = searchParams.get("token");
@@ -38,7 +39,7 @@ export default function ResetPasswordPage() {
       });
 
       if (result.error) {
-        setError(result.error.message || "Invalid or expired reset link");
+        setError(friendlyError(result.error, "generic"));
       } else {
         setSuccess(true);
       }

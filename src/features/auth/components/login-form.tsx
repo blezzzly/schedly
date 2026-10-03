@@ -12,6 +12,7 @@ import { loginSchema, type LoginInput } from "@/lib/validations";
 import { TurnstileWidget } from "@/components/turnstile";
 import { Spinner } from "@/components/ui/spinner";
 import { verifyCaptcha } from "@/app/actions";
+import { friendlyError } from "@/server/lib/friendly-error";
 import { toast } from "sonner";
 
 export function LoginForm() {
@@ -74,7 +75,11 @@ export function LoginForm() {
         } else if (msg.includes("Invalid") || msg.includes("invalid")) {
           setServerError("Invalid email or password.");
         } else {
-          setServerError(msg || "Sign in failed. Please try again.");
+          // The raw message used to be shown here verbatim whenever it did not
+          // match one of the cases above, which meant a database or provider
+          // failure during sign-in rendered its own error text to the user. Every
+          // unrecognised message now goes through friendlyError.
+          setServerError(friendlyError(signInResult.error, "generic"));
         }
         toast.error("Login failed. Please check your credentials and try again.");
         setLoading(false);

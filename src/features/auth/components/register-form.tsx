@@ -106,7 +106,7 @@ export function RegisterForm() {
       const signUpResult = await signUp(form);
 
       if (signUpResult.error) {
-        setServerError(signUpResult.error.message || "Registration failed. Please try again.");
+        setServerError(friendlyError(signUpResult.error, "generic"));
         toast.error("Registration failed. Please try again.");
         setLoading(false);
         return;
@@ -335,3 +335,5 @@ export function RegisterForm() {
     </Card>
   );
 }
+
+import { friendlyError } from "@/server/lib/friendly-error";

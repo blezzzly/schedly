@@ -123,6 +123,7 @@ interface ProfileSheetContentProps {
   loadingSyllabi?: boolean;
 }
 
+import { friendlyError } from "@/server/lib/friendly-error";
 export default function ProfileSheetContent({ 
   user, 
   gamification, 
@@ -191,7 +192,7 @@ export default function ProfileSheetContent({
       } as Parameters<typeof authClient.updateUser>[0]);
 
       if (result.error) {
-        setEditError(result.error.message || "Failed to update profile.");
+        setEditError(friendlyError(result.error, "save"));
       } else {
         refetchSession();
         setEditOpen(false);

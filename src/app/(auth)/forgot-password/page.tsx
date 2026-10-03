@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/features/auth/hooks/use-auth";
 import { Spinner } from "@/components/ui/spinner";
 
+import { friendlyError } from "@/server/lib/friendly-error";
 export default function ForgotPasswordPage() {
   const { forgotPassword } = useAuth();
   const [email, setEmail] = useState("");
@@ -26,7 +27,7 @@ export default function ForgotPasswordPage() {
     try {
       const result = await forgotPassword(email.trim());
       if (result.error) {
-        setError(result.error.message || "Something went wrong");
+        setError(friendlyError(result.error, "generic"));
       } else {
         setSent(true);
       }

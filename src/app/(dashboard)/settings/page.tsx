@@ -34,6 +34,7 @@ type UserWithExtras = {
   isAdmin?: boolean;
 } & Record<string, unknown>;
 
+import { friendlyError } from "@/server/lib/friendly-error";
 export default function SettingsPage() {
   const { user, isLoading } = useAuth();
   const u = user as UserWithExtras | null;
@@ -276,7 +277,7 @@ function AccountTab({ u }: { u: UserWithExtras | null }) {
       } as Parameters<typeof authClient.updateUser>[0]);
 
       if (result.error) {
-        setError(result.error.message || "Failed to update profile.");
+        setError(friendlyError(result.error, "save"));
       } else {
         setSuccess(true);
         refetchSession();
@@ -443,7 +444,7 @@ function SecurityTab() {
       });
 
       if (result.error) {
-        setError(result.error.message || "Failed to change password.");
+        setError(friendlyError(result.error, "save"));
       } else {
         setSuccess(true);
         setPasswordForm({ currentPassword: "", newPassword: "", confirmPassword: "" });
