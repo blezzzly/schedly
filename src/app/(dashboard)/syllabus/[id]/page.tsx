@@ -25,6 +25,7 @@ import {
   addSyllabusRequirement,
   type SyllabusWithRequirements,
 } from "../actions";
+import { withOfflineCache } from "@/lib/offline-cache";
 
 const TYPE_LABELS: Record<string, string> = {
   assignment: "Assignment",
@@ -61,6 +62,12 @@ export default function SyllabusDetailPage({ params }: { params: Promise<{ id: s
   const router = useRouter();
   const [syllabus, setSyllabus] = useState<SyllabusWithRequirements | null>(null);
   const [loading, setLoading] = useState(true);
+  // Set when the fetch fails outright, so a dead connection is never reported as
+  // a deleted syllabus. `getSyllabus` returns null for "no such syllabus" and
+  // throws for "could not ask"; before this the two collapsed into one screen
+  // reading "Syllabus not found", which is the worst possible thing to show
+  // someone whose data is intact and merely unreachable.
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [filter, setFilter] = useState<FilterType>("all");
   const [deleting, setDeleting] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -83,8 +90,14 @@ export default function SyllabusDetailPage({ params }: { params: Promise<{ id: s
     let cancelled = false;
     void (async () => {
       try {
-        const data = await getSyllabus(id);
-        if (!cancelled) setSyllabus(data);
+        const data = await withOfflineCache(`syllabus:detail:${id}`, () => getSyllabus(id));
+        if (cancelled) return;
+        setSyllabus(data);
+        setLoadError(null);
+      } catch {
+        // Nothing cached and no connection. Say that, rather than leaving
+        // `syllabus` null and letting the "not found" branch claim it is gone.
+        if (!cancelled) setLoadError("You're offline and this syllabus isn't saved on this device yet.");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -213,6 +226,34 @@ export default function SyllabusDetailPage({ params }: { params: Promise<{ id: s
     return (
       <div className="flex min-h-[50vh] items-center justify-center">
         <Spinner size={32} />
+      </div>
+    );
+  }
+
+  if (loadError) {
+    // Checked before `!syllabus` on purpose. Both mean "we have no syllabus to
+    // show", but they are not the same problem and must not read the same.
+    return (
+      <div className="mx-auto w-full max-w-4xl pt-4 md:pt-0">
+        <Link href="/syllabus">
+          <Button variant="outline" size="sm" className="mb-4">
+            <ArrowLeft className="h-4 w-4" />
+            Back to Syllabus
+          </Button>
+        </Link>
+        <div className="flex min-h-[19rem] w-full flex-col items-center justify-center rounded-2xl border-2 border-foreground/70 bg-card p-6 text-center shadow-[3px_3px_0_0_#401f32]">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-muted">
+            <AlertCircle className="h-7 w-7 text-muted-foreground" />
+          </div>
+          <h3 className="text-lg font-semibold text-foreground">Can&rsquo;t load this syllabus</h3>
+          <p className="mt-1 max-w-md text-sm text-muted-foreground">{loadError}</p>
+          <p className="mt-1 max-w-md text-sm text-muted-foreground">
+            Your syllabus is still saved. Nothing has been deleted.
+          </p>
+          <Button className="mt-6 h-11 px-6 font-medium" onClick={() => window.location.reload()}>
+            Try again
+          </Button>
+        </div>
       </div>
     );
   }

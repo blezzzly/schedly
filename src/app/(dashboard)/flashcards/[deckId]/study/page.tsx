@@ -7,6 +7,7 @@ import { logFlashcardReview } from "@/app/(dashboard)/pomodoro/gamification-acti
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { toast } from "sonner";
+import { withOfflineCache } from "@/lib/offline-cache";
 import {
   ArrowLeftIcon,
   RotateCcwIcon,
@@ -41,20 +42,26 @@ export default function StudyPage({
   const { deckId } = use(params);
   const [deck, setDeck] = useState<Deck | null>(null);
   const [loading, setLoading] = useState(true);
+  // Studying is the single most likely thing someone opens offline, so this page
+  // needs to be honest about a failed load. A toast alone leaves "No cards to
+  // study" on screen, implying the deck is empty rather than unreachable.
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [flipped, setFlipped] = useState(false);
   const [sessionStats, setSessionStats] = useState({ correct: 0, wrong: 0, again: 0, hard: 0, good: 0, easy: 0 });
 
   const load = useCallback(async () => {
     try {
-      const data = await getFlashcardDeck(deckId);
+      const data = await withOfflineCache(`flashcards:deck:${deckId}`, () => getFlashcardDeck(deckId));
       if (!data || (data as Deck).cards.length === 0) {
+        setLoadError(null);
         toast.error("No cards to study");
         return;
       }
       setDeck(data as Deck);
+      setLoadError(null);
     } catch {
-      toast.error("Failed to load deck");
+      setLoadError("You're offline and this deck isn't saved on this device yet.");
     } finally {
       setLoading(false);
     }
@@ -137,6 +144,36 @@ export default function StudyPage({
     return (
       <div className="flex min-h-[50vh] items-center justify-center">
         <Spinner size={32} />
+      </div>
+    );
+  }
+
+  if (loadError) {
+    // Before the empty-deck branch. "Cannot load" and "no cards" must not look
+    // the same, or someone offline concludes their deck is empty.
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center">
+        <div className="flex min-h-[19rem] w-full max-w-lg flex-col items-center justify-center rounded-2xl border-2 border-foreground/70 bg-card p-6 text-center shadow-[3px_3px_0_0_#401f32]">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-muted">
+            <BrainIcon className="h-7 w-7 text-muted-foreground" />
+          </div>
+          <h3 className="text-lg font-semibold text-foreground">Can&rsquo;t load this deck</h3>
+          <p className="mt-1 max-w-md text-sm text-muted-foreground">{loadError}</p>
+          <p className="mt-1 max-w-md text-sm text-muted-foreground">
+            Your cards are still saved. Nothing has been deleted.
+          </p>
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+            <Button className="h-11 px-6 font-medium" onClick={() => window.location.reload()}>
+              Try again
+            </Button>
+            <Link href={`/flashcards/${deckId}`}>
+              <Button variant="outline" className="h-11 px-6 font-medium">
+                <ArrowLeftIcon className="mr-1.5 h-4 w-4" />
+                Back to Deck
+              </Button>
+            </Link>
+          </div>
+        </div>
       </div>
     );
   }
