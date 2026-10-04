@@ -18,6 +18,7 @@ import { ChaoticOrbit } from "ldrs/react";
 import { compressImage } from "@/lib/image-compress";
 import { validateExtractedClasses, type ValidationIssue } from "@/server/services/validation.service";
 import { friendlyError } from "@/server/lib/friendly-error";
+import { isNetworkError, saveScheduleForOffline } from "@/lib/offline-writes";
 import { ReportErrorButton } from "@/components/report-error-dialog";
 import { toast } from "sonner";
 import {
@@ -284,13 +285,48 @@ export function CaptureView({ onClose, onSaved }: CaptureViewProps) {
       toast.error("Enter a schedule title");
       return;
     }
-    const result: SaveScheduleResult = await saveSchedule({
+
+    const input = {
       title: title.trim(),
       semester: semester.trim() || null,
       academicYear: academicYear.trim() || null,
       classes: validClasses,
       uploadId: upload?.id,
-    });
+    };
+
+    let result: SaveScheduleResult | null = null;
+    try {
+      result = await saveSchedule(input);
+    } catch (err) {
+      // A dead connection must not throw out of this handler. It used to, and
+      // because the caller's `saving` flag was cleared after the await, the
+      // button spun forever and the schedule a person had just typed out was
+      // simply gone.
+      if (!isNetworkError(err)) {
+        toast.error("Couldn't save your schedule. Please try again.");
+        return;
+      }
+
+      const queued = await saveScheduleForOffline(input);
+      if (!queued) {
+        toast.error("Couldn't save on this device. Free up some storage and try again.");
+        return;
+      }
+      toast.success(
+        `Saved on this device. "${input.title}" will sync when you're back online.`,
+        { duration: 6000 }
+      );
+      clearReviewState(userId);
+      clearUploadState(userId);
+      clearProcessingStarted(userId);
+      onSaved?.();
+      // Same destination as the online path. The dashboard reads its timetable
+      // from the local cache, which was just written, so the new schedule is
+      // there without a server.
+      router.push("/dashboard");
+      return;
+    }
+
     if (result.success) {
       clearReviewState(userId);
       clearUploadState(userId);

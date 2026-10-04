@@ -11,6 +11,7 @@ import {
 } from "@/app/(dashboard)/dashboard/weather-actions";
 import { retry } from "@/lib/retry";
 import { withOfflineCache } from "@/lib/offline-cache";
+import { QUEUE_FLUSHED_EVENT } from "@/lib/offline-queue";
 import { cachedAction } from "@/lib/server-action-cache";
 import { useMounted } from "@/lib/use-mounted";
 import {
@@ -84,6 +85,18 @@ export default function DashboardPage() {
       // Keep the current state when the refresh fails.
     }
   }, []);
+
+  // A schedule created offline is rendered from the local cache and marked as
+  // waiting to sync. Once the queue replays it, the server holds the real row,
+  // so the placeholder has to be replaced — otherwise the timetable keeps
+  // showing a copy that no longer exists anywhere it counts.
+  useEffect(() => {
+    const onFlushed = () => {
+      void reloadSchedules();
+    };
+    window.addEventListener(QUEUE_FLUSHED_EVENT, onFlushed);
+    return () => window.removeEventListener(QUEUE_FLUSHED_EVENT, onFlushed);
+  }, [reloadSchedules]);
 
   // Fetch weather on mount using browser geolocation, falling back to IP-based
   // detection when permission is denied or unavailable. Results are cached so

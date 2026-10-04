@@ -24,6 +24,9 @@ import {
   getNotificationDetailSnapshot,
   subscribeNotificationDetail,
 } from "@/lib/notification-detail-store";
+import { registerOfflineHandler, startOfflineQueueSync } from "@/lib/offline-queue";
+import { saveSchedule } from "@/app/(dashboard)/classes/actions";
+import { createNote } from "@/app/(dashboard)/notes/actions";
 
 // Loaded on demand. The quick-add panel pulls in the whole capture flow
 // (ldrs, the review form, the image pipeline), and because the shell renders on
@@ -33,6 +36,38 @@ const QuickAddSheet = dynamic(
   () => import("@/components/quick-add-sheet").then((m) => m.QuickAddSheet),
   { ssr: false }
 );
+
+/* Replay handlers for the offline write queue.
+ *
+ * Registered at module scope, not in an effect, because a queue entry can be
+ * replayed before React has mounted anything — the flush is triggered by the
+ * browser's own `online` event and by focus, and an entry that arrived while the
+ * app was closed must not be stranded waiting for a component to render.
+ *
+ * Each handler translates the stored payload back into the same server action
+ * the live path uses, so there is exactly one implementation of "create a
+ * schedule" and the offline copy cannot drift from the online one.
+ */
+
+/** The server answered, and the answer was no. Retrying cannot change that. */
+function refused(error: string): Error & { permanent: boolean } {
+  return Object.assign(new Error(error), { permanent: true });
+}
+
+registerOfflineHandler("schedule.create", async (payload) => {
+  const result = await saveSchedule(payload);
+  if (!result.success) throw refused(result.error ?? "Schedule was rejected");
+});
+
+registerOfflineHandler("note.create", async (payload) => {
+  const { title, content, folderId } = payload as {
+    title: string;
+    content: string;
+    folderId: string | null;
+  };
+  const result = await createNote(title, content, folderId);
+  if (!result.success) throw refused(result.error ?? "Note was rejected");
+});
 
 function DashboardShell({ children }: { children: React.ReactNode }) {
   const { themeVars } = useThemeConfig();
@@ -179,6 +214,18 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
       active = false;
     };
   }, [user, pathname]);
+
+  // Drain the offline write queue. Anything created with no connection lives
+  // here until a request succeeds, so this is the only thing standing between a
+  // timetable typed on a train and never existing at all.
+  //
+  // Starts for signed-in users only. A queued write replays through a server
+  // action, which needs a session, and replaying as a guest would fail with
+  // "Unauthorized" on every entry and mark the good ones as refused.
+  useEffect(() => {
+    if (!user) return;
+    return startOfflineQueueSync();
+  }, [user]);
 
   // Client heartbeat — QStash isn't configured in this deployment, so exact-
   // time class reminders only fire when something checks for them. Poll the

@@ -14,6 +14,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { AppNavPanel } from "@/components/app-nav-panel";
 import { withOfflineCache } from "@/lib/offline-cache";
+import { isNetworkError, saveNoteForOffline } from "@/lib/offline-writes";
 import { Card, CardContent } from "@/components/ui/card";
 import { TextField } from "@/components/ui/text-field";
 import { Spinner } from "@/components/ui/spinner";
@@ -165,26 +166,50 @@ export default function NotesPage() {
   async function handleSave() {
     if (!editTitle.trim()) return;
     setSaving(true);
-    if (editingNote) {
-      const result = await updateNote(editingNote.id, editTitle, editContent);
-      setSaving(false);
-      if (result.success) {
+
+    // setSaving is cleared in a finally on every path. These were bare awaits:
+    // offline the action rejected, the throw skipped setSaving(false), and the
+    // editor sat on a spinner with the text still in it and no way out.
+    try {
+      if (editingNote) {
+        const result = await updateNote(editingNote.id, editTitle, editContent);
+        if (!result.success) {
+          toast.error(result.error);
+          return;
+        }
         toast.success("Note saved");
-        closeEditor();
-        loadNotes();
       } else {
-        toast.error(result.error);
-      }
-    } else {
-      const result = await createNote(editTitle, editContent, selectedFolder);
-      setSaving(false);
-      if (result.success) {
+        const result = await createNote(editTitle, editContent, selectedFolder);
+        if (!result.success) {
+          toast.error(result.error);
+          return;
+        }
         toast.success("Note created");
-        closeEditor();
-        loadNotes();
-      } else {
-        toast.error(result.error);
       }
+      closeEditor();
+      void loadNotes();
+    } catch (err) {
+      if (!isNetworkError(err)) {
+        toast.error("Couldn't save your note. Please try again.");
+        return;
+      }
+      // Offline and new note. Keep it here rather than losing what was typed.
+      if (editingNote) {
+        toast.error("You're offline. Editing a saved note needs a connection.");
+        return;
+      }
+      const kept = await saveNoteForOffline(editTitle, editContent, selectedFolder);
+      if (!kept) {
+        toast.error("Couldn't save on this device. Free up some storage and try again.");
+        return;
+      }
+      toast.success("Saved on this device. It will sync when you're back online.", {
+        duration: 6000,
+      });
+      closeEditor();
+      void loadNotes();
+    } finally {
+      setSaving(false);
     }
   }
 

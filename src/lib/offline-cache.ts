@@ -13,7 +13,9 @@
 
 const DB_NAME = "schedly-offline";
 const STORE = "data";
-const DB_VERSION = 1;
+/** Pending writes waiting for a connection. Keyed by id so they can be removed individually. */
+const QUEUE_STORE = "queue";
+const DB_VERSION = 2;
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
@@ -22,8 +24,14 @@ function openDb(): Promise<IDBDatabase> {
   dbPromise = new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = () => {
-      if (!req.result.objectStoreNames.contains(STORE)) {
-        req.result.createObjectStore(STORE);
+      const db = req.result;
+      if (!db.objectStoreNames.contains(STORE)) {
+        db.createObjectStore(STORE);
+      }
+      // Version 2: the queue. Existing installs upgrade in place, so data
+      // already cached on a user's device survives.
+      if (!db.objectStoreNames.contains(QUEUE_STORE)) {
+        db.createObjectStore(QUEUE_STORE, { keyPath: "id" });
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -136,4 +144,68 @@ export async function withOfflineCache<T>(
 
 function cacheKey(key: string, options?: { cacheName?: string }): string {
   return options?.cacheName ? `${options.cacheName}:${key}` : key;
+}
+/* --- Queue store ---------------------------------------------------------
+ * Raw accessors for the pending-write queue. The queue semantics live in
+ * `offline-queue.ts`; these are only the IndexedDB plumbing, kept here so there
+ * is one connection to one database.
+ */
+
+/** Append a pending write. Entries carry their own id as the key. */
+export function queuePut(entry: { id: string }): Promise<void> {
+  return new Promise((resolve, reject) => {
+    openDb().then(
+      (db) => {
+        const tx = db.transaction(QUEUE_STORE, "readwrite");
+        tx.objectStore(QUEUE_STORE).put(entry);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      },
+      reject
+    );
+  });
+}
+
+/** Every pending write, oldest first so replay order matches the order entered. */
+export function queueGetAll<T>(): Promise<T[]> {
+  return new Promise((resolve, reject) => {
+    openDb().then(
+      (db) => {
+        const tx = db.transaction(QUEUE_STORE, "readonly");
+        const req = tx.objectStore(QUEUE_STORE).getAll();
+        req.onsuccess = () => {
+          const rows = (req.result ?? []) as T[];
+          rows.sort(
+            (a, b) =>
+              ((a as { createdAt?: number }).createdAt ?? 0) -
+              ((b as { createdAt?: number }).createdAt ?? 0)
+          );
+          resolve(rows);
+        };
+        req.onerror = () => reject(req.error);
+      },
+      reject
+    );
+  });
+}
+
+/** Drop one pending write, by id. */
+export function queueDelete(id: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    openDb().then(
+      (db) => {
+        const tx = db.transaction(QUEUE_STORE, "readwrite");
+        tx.objectStore(QUEUE_STORE).delete(id);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      },
+      reject
+    );
+  });
+}
+
+/** How many writes are waiting. Used for the "waiting to sync" indicator. */
+export async function queueCount(): Promise<number> {
+  const rows = await queueGetAll<unknown>().catch(() => []);
+  return rows.length;
 }
