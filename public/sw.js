@@ -2,7 +2,8 @@
  *
  * Strategy:
  *  - Navigation (HTML shell): network-first, falls back to the last good
- *    cached page, then to /offline.html when completely offline.
+ *    cached page, then redirects to a cached app page (/dashboard first) when
+ *    the requested route was never cached, and only then to /offline.html.
  *  - RSC payloads (client-side tab switching): stale-while-revalidate — the
  *    page the user already visited renders instantly offline.
  *  - Static build assets (_next/static, icons, images): cache-first. Hashed
@@ -23,7 +24,7 @@
 // signal the old worker gets to clear itself out: the activate handler deletes
 // caches that do not match, so a stale name here is what actually ships an old
 // offline behaviour to phones that already have the app installed.
-const CACHE_NAME = "schedly-cache-v5";
+const CACHE_NAME = "schedly-cache-v6";
 const RSC_CACHE = `${CACHE_NAME}-rsc`;
 
 // Dev mode. The app registers this worker on localhost too — otherwise push
@@ -53,9 +54,13 @@ function isExternalImage(url) {
   );
 }
 
-// When offline, navigation can still land on a URL that was never cached
-// (e.g. "/" redirects for signed-in users). Fall back to the main app pages
-// in a sensible order instead of giving up with the offline screen.
+// When offline, a navigation can land on a URL that was never cached — a first
+// launch that has not warmed yet, or a page added since the worker shipped.
+// Rather than a dead-end error screen, send them somewhere real.
+//
+// This mirrors NAV_FALLBACK_ROUTES in src/lib/offline-routes.ts. It is duplicated
+// rather than imported because a service worker cannot import from the app
+// bundle; the two must be changed together.
 const NAV_FALLBACKS = [
   "/dashboard",
   "/classes",
@@ -68,7 +73,6 @@ const NAV_FALLBACKS = [
   "/flashcards",
   "/syllabus",
   "/login",
-  "/",
 ];
 
 const PRECACHE_ASSETS = [
@@ -230,14 +234,29 @@ self.addEventListener("message", (event) => {
       (async () => {
         const cache = await caches.open(CACHE_NAME);
         const rscCache = await caches.open(RSC_CACHE);
+        // Same-origin app routes that still need caching after this pass.
+        //
+        // Reported back to the page so a partially-completed warm is retried on
+        // the next app open. Without this the page marks itself "done" the
+        // moment it posts the message, so a precache interrupted by a dropped
+        // connection or a backgrounded tab silently leaves pages uncached for
+        // the rest of the session — and the user finds out by opening one
+        // offline and hitting the fallback.
+        const incomplete = [];
+
         for (const url of data.urls || []) {
+          const u = new URL(url, self.location.origin);
+          // External images are opaque by nature; they have no HTML to parse
+          // and cannot be "incomplete", so they are not tracked.
+          const isAsset = u.origin !== self.location.origin;
+          let ok = false;
           try {
             // External images (avatars) need no-cors so they can be cached;
             // otherwise the browser blocks the request and offline fails.
-            const u = new URL(url, self.location.origin);
             const res = await fetch(url, isExternalImage(u) ? { mode: "no-cors" } : {});
             if (res.ok || res.type === "opaque") {
               cache.put(url, res.clone());
+              ok = true;
               // Warm the JS/CSS chunks referenced by the page so it actually
               // renders offline — the HTML shell alone is not enough.
               if (res.type !== "opaque") {
@@ -261,9 +280,21 @@ self.addEventListener("message", (event) => {
             // still navigates client-side when offline.
             const rsc = await fetch(url, { headers: { RSC: "1" } });
             if (rsc.ok) rscCache.put(new URL(url, self.location.origin).pathname, rsc.clone());
+            else if (!isAsset) ok = false;
           } catch {
-            // Best-effort.
+            if (!isAsset) ok = false;
           }
+          if (!ok && !isAsset) incomplete.push(url);
+        }
+
+        // Tell the page what is still missing. Guarded because the message
+        // port is absent when this is driven by a one-off postMessage with no
+        // reply channel.
+        try {
+          const reply = event.ports && event.ports[0];
+          if (reply) reply.postMessage({ type: "PRECACHE_DONE", incomplete });
+        } catch {
+          // No port; nothing to report to.
         }
       })()
     );
@@ -309,19 +340,32 @@ self.addEventListener("fetch", (event) => {
           const cached = await cache.match(request);
           if (cached) return cached;
 
-          // Deliberately NOT substituting another page here.
+          // This exact page is not on the device. Rather than a dead-end error
+          // screen, send them to an app page that IS cached — /dashboard first,
+          // because that is where the app itself puts you.
           //
-          // This used to walk NAV_FALLBACKS and serve the first cached app page
-          // for any uncached route. The result was that tapping Notes while the
-          // connection was flaky rendered the dashboard under a /notes URL. The
-          // user tapped again, got the dashboard again, and read it as the app
-          // looping back to the dashboard with no way out.
+          // Redirect rather than serving the fallback's HTML under the URL that
+          // was asked for. Serving it inline was tried before and it read as a
+          // bug: tapping Notes with no connection rendered the dashboard under
+          // a /notes URL, tapping again did the same thing, and it looked like
+          // the app was looping back to the dashboard with no way out. A real
+          // redirect makes the address bar agree with what is on screen, so
+          // there is nothing left to look like a loop.
           //
-          // A network failure on a phone that reports itself online is common,
-          // so this path was not a rare offline case — it was the common one.
-          //
-          // The offline page is the honest answer: it says what still works and
-          // its buttons point at routes that really are cached.
+          // Only paths confirmed to be in the cache are used, so the redirect
+          // cannot point at something that will fail the same way and bounce.
+          for (const path of NAV_FALLBACKS) {
+            const hit = await cache.match(path);
+            if (!hit) continue;
+            // Already the fallback, or nothing better exists: serve it directly
+            // instead of redirecting to the page we are already on.
+            if (path === url.pathname) return hit;
+            return Response.redirect(new URL(path, self.location.origin).href, 302);
+          }
+
+          // Nothing is cached at all — a first launch that never finished
+          // loading, or a brand-new install. There is no app to show, so the
+          // offline page is the only honest answer available.
           return (await cache.match("/offline.html")) || Response.error();
         }
       })()

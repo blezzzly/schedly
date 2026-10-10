@@ -18,6 +18,16 @@ import { cacheRead, cacheWrite, isNetworkError } from "@/lib/offline-cache";
 import { enqueueOfflineWrite } from "@/lib/offline-queue";
 import type { ExtractedClass } from "@/features/upload/hooks/use-upload";
 
+/**
+ * Fired after this device's cache is updated, so a list already on screen can
+ * re-read it instead of waiting for a navigation.
+ *
+ * The app writes to IndexedDB and then navigates to /dashboard, but navigating
+ * to the page you are already on does not remount it — so without this signal
+ * a schedule saved offline is stored correctly and still does not appear.
+ */
+export const LOCAL_WRITE_EVENT = "schedly:local-write";
+
 /** Mirrors the shape `scheduleRepository.findByUser` returns, plus a local marker. */
 type LocalSchedule = {
   id: string;
@@ -112,6 +122,17 @@ export async function saveScheduleForOffline(
 
   // The durable half.
   await enqueueOfflineWrite("schedule.create", input, `Schedule — ${input.title}`);
+
+  // Tell any list already on screen to re-read the cache.
+  //
+  // The caller navigates to /dashboard afterwards, but navigating to the page
+  // you are already on does not remount it, so its mount-time fetch never runs
+  // again. Without this the schedule is saved correctly and the user still
+  // cannot see it until they navigate away and back — the one case where the
+  // work silently fails to appear.
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent(LOCAL_WRITE_EVENT, { detail: { key: "schedule:list" } }));
+  }
   return true;
 }
 
@@ -175,5 +196,11 @@ export async function saveNoteForOffline(
     { title, content, folderId },
     `Note — ${title.slice(0, 40)}`
   );
+
+  // Same reason as a schedule: the notes list is already mounted, so it has to
+  // be told rather than left showing a stale copy.
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent(LOCAL_WRITE_EVENT, { detail: { key: "notes:all" } }));
+  }
   return true;
 }

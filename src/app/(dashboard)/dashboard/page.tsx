@@ -10,8 +10,9 @@ import {
   type WeatherData,
 } from "@/app/(dashboard)/dashboard/weather-actions";
 import { retry } from "@/lib/retry";
-import { withOfflineCache } from "@/lib/offline-cache";
+import { withOfflineCache, cacheRead } from "@/lib/offline-cache";
 import { QUEUE_FLUSHED_EVENT } from "@/lib/offline-queue";
+import { LOCAL_WRITE_EVENT } from "@/lib/offline-writes";
 import { cachedAction } from "@/lib/server-action-cache";
 import { useMounted } from "@/lib/use-mounted";
 import {
@@ -70,11 +71,20 @@ export default function DashboardPage() {
   // reads like a database row, "Good morning, Andres" reads like a person.
   const username = (u?.isAnonymous ? u?.name : u?.username) || u?.firstName || u?.name || "there";
 
+  // Read the timetable, preferring the server and falling back to this device's
+  // copy. Shared by the mount fetch and the offline-write listener below so both
+  // resolve the same data the same way.
+  const loadSchedules = useCallback(async () => {
+    return withOfflineCache("schedule:list", () =>
+      cachedAction("dash:schedules", () => getUserSchedules())
+    );
+  }, []);
+
   useEffect(() => {
-    retry(() => withOfflineCache("schedule:list", () => cachedAction("dash:schedules", () => getUserSchedules())), { delayMs: 2000 })
+    retry(loadSchedules, { delayMs: 2000 })
       .then((data) => setSchedules(data as ScheduleData[]))
       .catch(() => setSchedules([]));
-  }, []);
+  }, [loadSchedules]);
 
   // Refetch after an in-place edit so the timetable + today cards update.
   const reloadSchedules = useCallback(async () => {
@@ -97,6 +107,33 @@ export default function DashboardPage() {
     window.addEventListener(QUEUE_FLUSHED_EVENT, onFlushed);
     return () => window.removeEventListener(QUEUE_FLUSHED_EVENT, onFlushed);
   }, [reloadSchedules]);
+
+  // A schedule created offline while the dashboard is already open. The save
+  // path navigates to /dashboard, but going to the page you are already on
+  // does not remount it, so without this the mount fetch above never runs again
+  // and the schedule is saved but invisible.
+  //
+  // This reads the device cache directly rather than going back through
+  // `loadSchedules`. That matters: `loadSchedules` runs `cachedAction`, which
+  // holds a successful result for 15s, so within that window it would return the
+  // list from *before* the save and `withOfflineCache` would write that stale
+  // copy over the new one — silently undoing the schedule that was just
+  // created. The cache is the authoritative copy at this moment.
+  useEffect(() => {
+    const onLocalWrite = (e: Event) => {
+      const key = (e as CustomEvent<{ key?: string }>).detail?.key;
+      if (key !== "schedule:list") return;
+      void cacheRead<ScheduleData[]>("schedule:list")
+        .then((data) => {
+          if (data) setSchedules(data);
+        })
+        .catch(() => {
+          // Keep showing what is already there rather than blanking the page.
+        });
+    };
+    window.addEventListener(LOCAL_WRITE_EVENT, onLocalWrite);
+    return () => window.removeEventListener(LOCAL_WRITE_EVENT, onLocalWrite);
+  }, []);
 
   // Fetch weather on mount using browser geolocation, falling back to IP-based
   // detection when permission is denied or unavailable. Results are cached so

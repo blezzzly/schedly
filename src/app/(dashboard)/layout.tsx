@@ -25,6 +25,7 @@ import {
   subscribeNotificationDetail,
 } from "@/lib/notification-detail-store";
 import { registerOfflineHandler, startOfflineQueueSync } from "@/lib/offline-queue";
+import { OFFLINE_ROUTES } from "@/lib/offline-routes";
 import { saveSchedule } from "@/app/(dashboard)/classes/actions";
 import { createNote } from "@/app/(dashboard)/notes/actions";
 
@@ -135,11 +136,17 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
     setAvatarError(false);
   }
 
-  // Auto-download offline support: once signed in, warm the cache with the
-  // main tab pages so they're instantly available (and work) offline. The
-  // avatar is warmed too so the user's photo still renders without internet.
-  // Runs once per session and only after the page has settled — hitting 7
-  // pages at once on app open just competes with the first paint.
+  // Auto-download offline support: once signed in, warm the cache with every
+  // route in the app so each one is available without a connection. The avatar
+  // is warmed too so the user's photo still renders without internet.
+  //
+  // "Done" is only recorded once the worker confirms the pages are cached. The
+  // previous version set the flag the instant it posted the message, so a
+  // precache cut short — signal dropped, tab backgrounded — was never retried
+  // and those pages stayed missing for the rest of the session. Now a partial
+  // result leaves the flag unset, so the next app open tries again.
+  //
+  // Deliberately delayed so it never competes with the first paint.
   useEffect(() => {
     if (!user || !("serviceWorker" in navigator)) return;
     const KEY = `schedly-precached-${(user as { id?: string }).id ?? ""}`;
@@ -153,38 +160,72 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
         .then((reg) => {
           const avatar = (user as { image?: string; avatarUrl?: string } | null)?.image
             || (user as { image?: string; avatarUrl?: string } | null)?.avatarUrl;
-          reg.active?.postMessage({
-            type: "PRECACHE",
-            urls: [
-              // Every dashboard route that renders without network. A page that
-              // is not in this list is simply absent from the cache when the
-              // connection drops, so the user lands on whatever the service
-              // worker picked rather than the page they asked for.
-              //
-              // AI-dependent routes are deliberately included anyway: their
-              // shells render offline, and it is only the upload that cannot
-              // run. Excluding them would mean choosing between "the page is
-              // there but upload fails" and "the page is not there at all", and
-              // the first is the honest one.
-              "/dashboard", "/classes", "/notes", "/notifications", "/pomodoro",
-              "/gwa", "/todo", "/planner", "/flashcards", "/syllabus", "/settings",
-              "/feedback", "/profile",
-              ...(avatar ? [avatar] : []),
-            ],
-          });
+          const urls = [
+            // Every route that must render without a connection. See
+            // OFFLINE_ROUTES for why this list is exhaustive rather than
+            // best-effort: a page missing from it is a page the user cannot
+            // open once the signal drops, with no partial-render fallback.
+            //
+            // AI-dependent routes are included anyway: their shells render
+            // offline, and it is only the upload that cannot run. Excluding them
+            // would mean choosing between "the page is there but upload fails"
+            // and "the page is not there at all", and the first is honest.
+            ...OFFLINE_ROUTES,
+            ...(avatar ? [avatar] : []),
+          ];
+
+          // A MessageChannel so the worker can report back which pages it could
+          // not cache. Without a reply port it still caches everything it can;
+          // it just cannot tell us whether to retry on a later open.
+          let channel: MessageChannel | null = null;
+          try {
+            channel = new MessageChannel();
+            channel.port1.onmessage = (e: MessageEvent) => {
+              const incomplete = (e.data as { incomplete?: string[] })?.incomplete;
+              // Only a fully-successful warm is allowed to mark the work done.
+              if (Array.isArray(incomplete) && incomplete.length === 0) {
+                try {
+                  sessionStorage.setItem(KEY, "1");
+                } catch {
+                  // Best-effort.
+                }
+              }
+              channel?.port1.close();
+            };
+          } catch {
+            // No MessageChannel (very old browser) — proceed unconfirmed.
+          }
+
+          reg.active?.postMessage({ type: "PRECACHE", urls }, channel ? [channel.port2] : []);
           // Re-arm pending class-reminder alarms after every app open so they
           // still fire even if the tab/SW was closed since they were set.
           reg.active?.postMessage({ type: "REARM_ALARMS" });
         })
         .catch(() => {});
     }, 3000);
-    try {
-      sessionStorage.setItem(KEY, "1");
-    } catch {
-      // Best-effort.
-    }
     return () => clearTimeout(timer);
   }, [user]);
+
+  // Warm the cache for whichever page the user is actually on.
+  //
+  // OFFLINE_ROUTES above covers the fixed routes, but routes with a dynamic
+  // segment (/syllabus/[id], /flashcards/[deckId]) cannot be listed ahead of
+  // time — the ids live in the database, so there is nothing to fetch until the
+  // server can be asked. This caches whichever one the user is on, so a syllabus
+  // or deck they open while online is still there when the signal drops.
+  //
+  // The worker fetches network-first, so this never serves stale HTML while
+  // there is a connection — it only decides what is available when there is not.
+  useEffect(() => {
+    if (!user || !("serviceWorker" in navigator) || !pathname) return;
+    const path = pathname.startsWith("/") ? pathname : `/${pathname}`;
+    const timer = setTimeout(() => {
+      navigator.serviceWorker.ready
+        .then((reg) => reg.active?.postMessage({ type: "PRECACHE", urls: [path] }))
+        .catch(() => {});
+    }, 1200);
+    return () => clearTimeout(timer);
+  }, [user, pathname]);
 
   // Arm local class-reminder alarms from the service worker on every app open
   // (any dashboard page), not just the Notifications page. Local alarms fire

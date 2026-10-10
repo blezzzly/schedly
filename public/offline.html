@@ -108,9 +108,9 @@
       <img class="logo" src="/images/logo.jpg" alt="Schedly logo" width="72" height="72" />
       <h1>You&rsquo;re offline</h1>
       <p>
-        This page isn&rsquo;t saved on your device yet. Pages you&rsquo;ve already
-        opened still work &mdash; keep using those. Anything you add or change
-        offline is kept here and sent on its own once you&rsquo;re back.
+        Schedly isn&rsquo;t finished loading on this device yet, so there&rsquo;s no
+        app to show here. Once a page has loaded once, it keeps working without a
+        connection from then on.
       </p>
       <div class="offline-note">
         <strong>Still works offline:</strong> your schedule, notes, to-do list and
@@ -138,6 +138,11 @@
       // Reconnection is not a reason to move someone. Anything already opened
       // keeps working from the cache, and anything queued while offline is
       // replayed in the background by the app itself — no navigation needed.
+      //
+      // Note that this page is now only reached when nothing at all is cached
+      // (a first launch that never finished). The worker redirects to a cached
+      // app page first, so an ordinary "I opened a page I hadn't opened before"
+      // lands on the dashboard rather than here.
 
       // Point the buttons at the best cached app page, so following one lands on
       // something real rather than another offline card.
