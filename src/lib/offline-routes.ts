@@ -19,6 +19,24 @@
  * actually on, so one becomes available the moment it is opened while online.
  */
 
+/**
+ * Version of the cache the worker builds. Must equal CACHE_NAME in public/sw.js.
+ *
+ * This exists because of a trap worth writing down. When the worker's cache name
+ * changes, its `activate` handler deletes every older cache — that is what makes
+ * a new build actually ship. It also wipes all the pages precached by the
+ * previous version, which is correct and expected.
+ *
+ * The "already precached" marker has to move with it. If that marker is not
+ * versioned, an upgrade leaves the device in a state where the cache is empty
+ * but the app still believes precaching finished, so it never runs again. Every
+ * offline navigation then finds nothing cached and lands on the offline screen —
+ * permanently, and with no way for the user to fix it.
+ *
+ * Bump this whenever the worker's CACHE_NAME is bumped.
+ */
+export const OFFLINE_CACHE_VERSION = "v6";
+
 export const OFFLINE_ROUTES = [
   "/dashboard",
   "/classes",

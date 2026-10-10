@@ -244,48 +244,80 @@ self.addEventListener("message", (event) => {
         // offline and hitting the fallback.
         const incomplete = [];
 
-        for (const url of data.urls || []) {
+        // Cache one route: its HTML, the chunks that HTML references, and its
+        // RSC payload. Returns false when the route could not be cached.
+        //
+        // Split out so routes can be warmed concurrently. Doing them one at a
+        // time meant a full warm was 16 sequential page loads plus every chunk
+        // each one pulls in — long enough on a phone that the connection often
+        // dropped partway, and the app was left half-cached.
+        const warmOne = async (url) => {
           const u = new URL(url, self.location.origin);
           // External images are opaque by nature; they have no HTML to parse
           // and cannot be "incomplete", so they are not tracked.
-          const isAsset = u.origin !== self.location.origin;
+          if (u.origin !== self.location.origin) {
+            try {
+              const res = await fetch(url, isExternalImage(u) ? { mode: "no-cors" } : {});
+              if (res.ok || res.type === "opaque") cache.put(url, res.clone());
+            } catch {
+              // Best-effort.
+            }
+            return true;
+          }
+
           let ok = false;
           try {
-            // External images (avatars) need no-cors so they can be cached;
-            // otherwise the browser blocks the request and offline fails.
-            const res = await fetch(url, isExternalImage(u) ? { mode: "no-cors" } : {});
-            if (res.ok || res.type === "opaque") {
+            const res = await fetch(url);
+            if (res.ok) {
               cache.put(url, res.clone());
               ok = true;
               // Warm the JS/CSS chunks referenced by the page so it actually
               // renders offline — the HTML shell alone is not enough.
-              if (res.type !== "opaque") {
-                const html = await res.clone().text();
-                const refs = html.match(/\/_next\/static\/[^"']+/g) || [];
-                for (const ref of [...new Set(refs)]) {
-                  try {
-                    const asset = await fetch(ref);
+              const html = await res.clone().text();
+              const refs = html.match(/\/_next\/static\/[^"']+/g) || [];
+              await Promise.all([...new Set(refs)].map((ref) =>
+                fetch(ref)
+                  .then((asset) => {
                     if (asset.ok) cache.put(ref, asset.clone());
-                  } catch {
+                  })
+                  .catch(() => {
                     // Best-effort.
-                  }
-                }
-              }
+                  })
+              ));
             }
           } catch {
             // Best-effort; skip pages that fail.
           }
+
           try {
             // Warm the RSC payload too, keyed by plain path, so the page
             // still navigates client-side when offline.
             const rsc = await fetch(url, { headers: { RSC: "1" } });
             if (rsc.ok) rscCache.put(new URL(url, self.location.origin).pathname, rsc.clone());
-            else if (!isAsset) ok = false;
+            else ok = false;
           } catch {
-            if (!isAsset) ok = false;
+            ok = false;
           }
-          if (!ok && !isAsset) incomplete.push(url);
-        }
+          return ok;
+        };
+
+        // A small window rather than all at once. Firing every route in
+        // parallel on a phone connection is its own problem — they compete for
+        // the same radio and every one of them slows down, which is how a warm
+        // ends up completing none of them before the user gives up on the app
+        // and switches back to the browser.
+        const urls = data.urls || [];
+        const CONCURRENCY = 4;
+        let cursor = 0;
+        await Promise.all(
+          Array.from({ length: Math.min(CONCURRENCY, urls.length) }, async () => {
+            while (cursor < urls.length) {
+              const url = urls[cursor++];
+              const ok = await warmOne(url);
+              if (!ok) incomplete.push(url);
+            }
+          })
+        );
 
         // Tell the page what is still missing. Guarded because the message
         // port is absent when this is driven by a one-off postMessage with no

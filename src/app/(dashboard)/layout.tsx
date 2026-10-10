@@ -25,7 +25,7 @@ import {
   subscribeNotificationDetail,
 } from "@/lib/notification-detail-store";
 import { registerOfflineHandler, startOfflineQueueSync } from "@/lib/offline-queue";
-import { OFFLINE_ROUTES } from "@/lib/offline-routes";
+import { OFFLINE_ROUTES, OFFLINE_CACHE_VERSION } from "@/lib/offline-routes";
 import { saveSchedule } from "@/app/(dashboard)/classes/actions";
 import { createNote } from "@/app/(dashboard)/notes/actions";
 
@@ -87,6 +87,20 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
 
   // First-time users are pushed through the setup flow before using the app.
   const { user, isLoading } = useAuth();
+  // Stable primitive derived from `user`. The effects below that warm the cache
+  // depend on this rather than on `user` itself: `user` can be a fresh object
+  // on every render (the offline fallback comes from state), and an effect keyed
+  // on it would tear down and re-arm its timer each time — so a 3s delayed task
+  // would keep restarting and never run. A string id changes only when the
+  // signed-in account actually changes.
+  const userId = (user as { id?: string } | null)?.id ?? "";
+  // The avatar is warmed into the cache so the user's photo still renders with
+  // no connection. Read here rather than inside the effect so the effect can
+  // depend on a primitive without also depending on the whole user object.
+  const cachedAvatar =
+    (user as { image?: string; avatarUrl?: string } | null)?.image
+    || (user as { avatarUrl?: string } | null)?.avatarUrl
+    || "";
   const userObj = user as { onboardingCompleted?: boolean; emailVerified?: boolean } | null;
   const needsOnboarding =
     !isLoading && user && !userObj?.onboardingCompleted;
@@ -148,8 +162,14 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
   //
   // Deliberately delayed so it never competes with the first paint.
   useEffect(() => {
-    if (!user || !("serviceWorker" in navigator)) return;
-    const KEY = `schedly-precached-${(user as { id?: string }).id ?? ""}`;
+    if (!userId || !("serviceWorker" in navigator)) return;
+    // Versioned: see OFFLINE_CACHE_VERSION. Without the version this marker
+    // survives a cache wipe, so after an upgrade the app would think precaching
+    // was already done while the cache held nothing, and every page would be
+    // unreachable offline.
+    const KEY = `schedly-precached-${OFFLINE_CACHE_VERSION}-${userId}`;
+    // Read outside the timer so the effect does not need `user` in its deps.
+    const avatar = cachedAvatar;
     try {
       if (sessionStorage.getItem(KEY)) return;
     } catch {
@@ -158,8 +178,6 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
     const timer = setTimeout(() => {
       navigator.serviceWorker.ready
         .then((reg) => {
-          const avatar = (user as { image?: string; avatarUrl?: string } | null)?.image
-            || (user as { image?: string; avatarUrl?: string } | null)?.avatarUrl;
           const urls = [
             // Every route that must render without a connection. See
             // OFFLINE_ROUTES for why this list is exhaustive rather than
@@ -204,7 +222,14 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
         .catch(() => {});
     }, 3000);
     return () => clearTimeout(timer);
-  }, [user]);
+    // Keyed on the id, not the user object: see `userId`. An effect depending on
+    // an object that is recreated per render restarts its timer forever, so
+    // this 3s-delayed warm would never fire at all.
+    //
+    // `user` is deliberately not a dependency: adding it reintroduces exactly the
+    // bug `userId` exists to avoid. The avatar is a display-only extra; if it
+    // changes without the account changing, the worst case is one stale photo.
+  }, [userId, cachedAvatar]);
 
   // Warm the cache for whichever page the user is actually on.
   //
@@ -217,7 +242,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
   // The worker fetches network-first, so this never serves stale HTML while
   // there is a connection — it only decides what is available when there is not.
   useEffect(() => {
-    if (!user || !("serviceWorker" in navigator) || !pathname) return;
+    if (!userId || !("serviceWorker" in navigator) || !pathname) return;
     const path = pathname.startsWith("/") ? pathname : `/${pathname}`;
     const timer = setTimeout(() => {
       navigator.serviceWorker.ready
@@ -225,7 +250,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
         .catch(() => {});
     }, 1200);
     return () => clearTimeout(timer);
-  }, [user, pathname]);
+  }, [userId, pathname]);
 
   // Arm local class-reminder alarms from the service worker on every app open
   // (any dashboard page), not just the Notifications page. Local alarms fire
