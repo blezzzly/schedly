@@ -35,7 +35,7 @@
  *
  * Bump this whenever the worker's CACHE_NAME is bumped.
  */
-export const OFFLINE_CACHE_VERSION = "v6";
+export const OFFLINE_CACHE_VERSION = "v7";
 
 export const OFFLINE_ROUTES = [
   "/dashboard",

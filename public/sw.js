@@ -3,7 +3,9 @@
  * Strategy:
  *  - Navigation (HTML shell): network-first, falls back to the last good
  *    cached page, then redirects to a cached app page (/dashboard first) when
- *    the requested route was never cached, and only then to /offline.html.
+ *    the requested route was never cached. Every lookup ignores Vary, because
+ *    Next.js varies app responses on RSC headers a bare path lookup does not
+ *    send — without that, a fully-cached page still reads as a cache miss.
  *  - RSC payloads (client-side tab switching): stale-while-revalidate — the
  *    page the user already visited renders instantly offline.
  *  - Static build assets (_next/static, icons, images): cache-first. Hashed
@@ -24,7 +26,7 @@
 // signal the old worker gets to clear itself out: the activate handler deletes
 // caches that do not match, so a stale name here is what actually ships an old
 // offline behaviour to phones that already have the app installed.
-const CACHE_NAME = "schedly-cache-v6";
+const CACHE_NAME = "schedly-cache-v7";
 const RSC_CACHE = `${CACHE_NAME}-rsc`;
 
 // Dev mode. The app registers this worker on localhost too — otherwise push
@@ -80,7 +82,6 @@ const PRECACHE_ASSETS = [
   "/icons/icon-192.png",
   "/icons/icon-512.png",
   "/images/logo.jpg",
-  "/offline.html",
   "/notif-icon.svg",
 ];
 
@@ -369,7 +370,17 @@ self.addEventListener("fetch", (event) => {
           return res;
         } catch {
           const cache = await caches.open(CACHE_NAME);
-          const cached = await cache.match(request);
+          // `ignoreVary` is required, not an optimisation.
+          //
+          // Every app page is served with
+          //   Vary: rsc, next-router-state-tree, next-router-prefetch, ...
+          // and a Cache API match compares those headers unless told not to. A
+          // plain path lookup like cache.match("/dashboard") carries none of
+          // them, so it can never match an entry stored from a navigation —
+          // it returns undefined even on a fully-cached page. Every offline
+          // lookup therefore fell through to the offline screen, which is
+          // exactly what users reported.
+          const cached = await cache.match(request, { ignoreVary: true });
           if (cached) return cached;
 
           // This exact page is not on the device. Rather than a dead-end error
@@ -387,7 +398,9 @@ self.addEventListener("fetch", (event) => {
           // Only paths confirmed to be in the cache are used, so the redirect
           // cannot point at something that will fail the same way and bounce.
           for (const path of NAV_FALLBACKS) {
-            const hit = await cache.match(path);
+            // ignoreVary for the same reason as the lookup above: these pages
+            // all carry Vary on RSC headers a bare path does not send.
+            const hit = await cache.match(path, { ignoreVary: true });
             if (!hit) continue;
             // Already the fallback, or nothing better exists: serve it directly
             // instead of redirecting to the page we are already on.
@@ -395,10 +408,16 @@ self.addEventListener("fetch", (event) => {
             return Response.redirect(new URL(path, self.location.origin).href, 302);
           }
 
-          // Nothing is cached at all — a first launch that never finished
-          // loading, or a brand-new install. There is no app to show, so the
-          // offline page is the only honest answer available.
-          return (await cache.match("/offline.html")) || Response.error();
+          // Nothing is cached at all — a first launch that never finished loading, or
+          // a brand-new install. There is no app to render, so this has to fail.
+          //
+          // It used to return /offline.html here. Removed: the page only ever
+          // appeared because of the Vary bug above, so it was a misleading
+          // "we've lost everything" card for a cache that was in fact full. Now
+          // that the lookup is correct this branch is genuinely rare, and a
+          // browser network error is the more honest signal for "we have nothing
+          // for you".
+          return Response.error();
         }
       })()
     );
@@ -415,7 +434,8 @@ self.addEventListener("fetch", (event) => {
         const cache = await caches.open(RSC_CACHE);
         const pathKey = url.origin + url.pathname;
         const cached =
-          (await cache.match(request)) || (await cache.match(pathKey));
+          (await cache.match(request, { ignoreVary: true })) ||
+          (await cache.match(pathKey, { ignoreVary: true }));
         const fetched = fetch(request).then((res) => {
           if (res.ok) {
             cache.put(request, res.clone());
@@ -445,7 +465,7 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(
       (async () => {
         const cache = await caches.open(CACHE_NAME);
-        const cached = await cache.match(request);
+        const cached = await cache.match(request, { ignoreVary: true });
         if (cached) {
           // Revalidate in the background so the next visit is fresh.
           fetch(request)
@@ -468,7 +488,7 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(
       (async () => {
         const cache = await caches.open(CACHE_NAME);
-        const cached = await cache.match(request);
+        const cached = await cache.match(request, { ignoreVary: true });
         if (cached) return cached;
         const res = await fetch(request);
         if (res.ok) cache.put(request, res.clone());
@@ -488,7 +508,7 @@ self.addEventListener("fetch", (event) => {
           if (res.ok) cache.put(request, res.clone());
           return res;
         } catch {
-          return (await cache.match(request)) || Response.error();
+          return (await cache.match(request, { ignoreVary: true })) || Response.error();
         }
       })()
     );
@@ -511,7 +531,7 @@ self.addEventListener("fetch", (event) => {
           cache.put(request, res.clone()).catch(() => {});
           return res;
         } catch {
-          return (await cache.match(request)) || Response.error();
+          return (await cache.match(request, { ignoreVary: true })) || Response.error();
         }
       })()
     );
