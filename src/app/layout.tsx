@@ -70,6 +70,24 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  // Pinch-zoom off across the whole app.
+  //
+  // Schedly is a fixed layout with bottom-anchored navigation and a timetable
+  // grid: zooming it does not reveal more of anything, it just scales the UI and
+  // leaves the nav bar and the floating buttons detached from the edges they
+  // are positioned against. On a timetable it is also a reliable way to
+  // mis-tap a class and drop the sheet, so it is locked rather than left to
+  // chance.
+  //
+  // `maximumScale` alone is what browsers honour on touch devices — Android
+  // Chrome ignores `user-scalable=no` since v54 but still respects the scale
+  // limit, so both are set deliberately. iOS Safari still permits zoom with
+  // these set; that is a browser behaviour no viewport tag can override, and
+  // `touch-action: manipulation` on the root below covers double-tap zoom,
+  // which is the gesture that actually fires by accident here.
+  userScalable: false,
+  maximumScale: 1,
+  minimumScale: 1,
   viewportFit: "cover",
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#ffffff" },

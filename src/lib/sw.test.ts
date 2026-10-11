@@ -198,7 +198,7 @@ describe("service worker", () => {
 
   it("precaches the icons and the offline page, so both exist before any page is opened", async () => {
     await h.emit("install");
-    const cache = h.getCache("schedly-cache-v8");
+    const cache = h.getCache("schedly-cache-v9");
     // The offline page is what a never-downloaded device is shown, so it has to
     // be in the cache from the very first install.
     expect(cache.entries.has("/offline.html")).toBe(true);
@@ -210,7 +210,7 @@ describe("service worker", () => {
     const stale = h.getCache("schedly-cache-v7");
     await stale.put("/dashboard", new Response("old"));
     // The current cache is created by the install step, not activate.
-    const current = h.getCache("schedly-cache-v8");
+    const current = h.getCache("schedly-cache-v9");
     await current.put("/dashboard", new Response("new"));
 
     await h.emit("activate");
@@ -218,7 +218,7 @@ describe("service worker", () => {
     // A stale cache means pages that used to open offline silently stop, and
     // that is what actually ships an old offline experience to installed apps.
     expect(h.caches.has("schedly-cache-v7")).toBe(false);
-    expect(h.caches.has("schedly-cache-v8")).toBe(true);
+    expect(h.caches.has("schedly-cache-v9")).toBe(true);
     expect(await current.match("/dashboard")).toBeDefined();
   });
 
@@ -235,7 +235,7 @@ describe("service worker", () => {
   });
 
   it("serves a cached page when the network is gone", async () => {
-    const cache = h.getCache("schedly-cache-v8");
+    const cache = h.getCache("schedly-cache-v9");
     await cache.put("https://schedly.test/dashboard", new Response("<html>dashboard</html>", { status: 200 }));
     h.fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
 
@@ -248,7 +248,7 @@ describe("service worker", () => {
   });
 
   it("serves the offline page when nothing at all is cached", async () => {
-    const cache = h.getCache("schedly-cache-v8");
+    const cache = h.getCache("schedly-cache-v9");
     await cache.put("/offline.html", new Response("<html>not downloaded</html>"));
     h.fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
 
@@ -262,7 +262,7 @@ describe("service worker", () => {
   });
 
   it("never serves the HTML shell to an API request", async () => {
-    const cache = h.getCache("schedly-cache-v8");
+    const cache = h.getCache("schedly-cache-v9");
     await cache.put("https://schedly.test/dashboard", new Response("<html>dashboard</html>"));
 
     const { handled } = await h.emit("fetch", {
@@ -275,7 +275,7 @@ describe("service worker", () => {
   });
 
   it("does not cache API responses at all", async () => {
-    const cache = h.getCache("schedly-cache-v8");
+    const cache = h.getCache("schedly-cache-v9");
 
     const { handled } = await h.emit("fetch", {
       request: new Request("https://schedly.test/api/some-data", { method: "GET" }),
@@ -295,7 +295,7 @@ describe("service worker", () => {
   });
 
   it("serves a hashed static chunk from cache without going to the network", async () => {
-    const cache = h.getCache("schedly-cache-v8");
+    const cache = h.getCache("schedly-cache-v9");
     await cache.put(
       "https://schedly.test/_next/static/chunks/main-abc123.js",
       new Response("console.log(1)")
@@ -317,7 +317,7 @@ describe("service worker", () => {
   });
 
   it("still refreshes a fixed-name image, which can genuinely change", async () => {
-    const cache = h.getCache("schedly-cache-v8");
+    const cache = h.getCache("schedly-cache-v9");
     await cache.put("https://schedly.test/icons/icon-192.png", new Response("old-icon"));
     h.fetchMock.mockResolvedValue(new Response("new-icon", { status: 200 }));
 
@@ -332,7 +332,7 @@ describe("service worker", () => {
   });
 
   it("bounds the runtime image cache so it cannot grow without limit", async () => {
-    const cache = h.getCache("schedly-cache-v8");
+    const cache = h.getCache("schedly-cache-v9");
     h.fetchMock.mockImplementation(async () => new Response("img", { status: 200 }));
 
     for (let i = 0; i < 130; i++) {
@@ -344,6 +344,54 @@ describe("service worker", () => {
     // Unbounded growth on a device with a few hundred MB is how the browser ends
     // up evicting the app shell along with the photos.
     expect(cache.entries.size).toBeLessThanOrEqual(120);
+  });
+
+  it("never caches a prefetch payload over a real navigation", async () => {
+    // The regression that made tapping an unopened page flash and hard-reload.
+    //
+    // Next.js fetches a *partial* payload ahead of a tap (Next-Router-Prefetch:
+    // 1) and a *complete* one when the tap happens. Sharing a cache key meant the
+    // tap could be answered with the partial one; Next.js then had nothing to
+    // render, treated the client navigation as failed, and fell back to a full
+    // page load — which is the white flash, and offline is what dragged it to
+    // the dashboard.
+    const cache = h.getCache("schedly-cache-v9-rsc");
+    const url = "https://schedly.test/notes";
+
+    const prefetch = new Request(url, { method: "GET", headers: { RSC: "1", "Next-Router-Prefetch": "1" } });
+    const navigation = new Request(url, { method: "GET", headers: { RSC: "1" } });
+
+    h.fetchMock.mockResolvedValue(new Response("PARTIAL", { status: 200 }));
+    const prefetchResult = await h.emit("fetch", { request: prefetch });
+
+    // Left entirely alone: not served from cache, and not written to it.
+    expect(prefetchResult.handled).toBe(false);
+    expect(cache.entries.size).toBe(0);
+
+    h.fetchMock.mockResolvedValue(new Response("COMPLETE", { status: 200 }));
+    const navResult = await h.emit("fetch", { request: navigation });
+
+    expect(navResult.handled).toBe(true);
+    // The real navigation must reach the network, not inherit a stale partial.
+    expect(await navResult.response!.text()).toBe("COMPLETE");
+  });
+
+  it("still serves a previously cached real navigation payload", async () => {
+    // The fix above must not cost offline navigation — a route genuinely
+    // visited while online still has to open with no connection.
+    const cache = h.getCache("schedly-cache-v9-rsc");
+    await cache.put("https://schedly.test" + "/notes", new Response("COMPLETE", { status: 200 }));
+    h.fetchMock.mockRejectedValue(new TypeError("offline"));
+
+    const { response, handled } = await h.emit("fetch", {
+      request: new Request("https://schedly.test/notes", {
+        method: "GET",
+        headers: { RSC: "1" },
+      }),
+    });
+
+    expect(handled).toBe(true);
+    expect(await response!.text()).toBe("COMPLETE");
   });
 
   it("registers Background Sync without failing when it is unsupported", async () => {
@@ -370,7 +418,7 @@ describe("service worker", () => {
 
   it("does no caching at all in dev, where chunk URLs change every restart", async () => {
     const dev = loadWorker("http://localhost:3000/sw.js?dev=1");
-    const cache = dev.getCache("schedly-cache-v8");
+    const cache = dev.getCache("schedly-cache-v9");
     await dev.emit("install");
 
     // A cache-first worker in dev hands back stale module factories and breaks

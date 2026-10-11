@@ -19,7 +19,21 @@ export default function manifest(): MetadataRoute.Manifest {
     //
     // Note this hides the status bar too. Drop "fullscreen" from this array to
     // get the status bar back and the navigation bar with it.
-    display_override: ["fullscreen", "standalone"],
+    // Standalone only, deliberately not fullscreen.
+    //
+    // Fullscreen was here to hide the black navigation bar Android draws below
+    // a standalone app. It also hides the status bar, and that is the wrong
+    // trade: on a phone the status bar is where the clock, the battery
+    // percentage and the signal/Wi-Fi icons live. Losing those to remove a
+    // cosmetic strip was a bad bargain, especially for an app whose whole point
+    // is being useful when a connection is unreliable — that is exactly when you
+    // want to see the Wi-Fi icon and the time.
+    //
+    // The nav bar is back as a result. If the black strip ever bothers anyone
+    // again, `display_override: ["standalone"]` plus
+    // `viewportFit: "cover"` already draws the app's safe-area padding under it
+    // correctly, so it blends rather than overlapping.
+    display_override: ["standalone"],
     orientation: "portrait",
     background_color: "#ffffff",
     theme_color: "#ffffff",

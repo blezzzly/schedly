@@ -165,6 +165,12 @@ body {
        app. Painting both guarantees the theme colour covers the entire screen
        including the areas a scroll container does not reach. */
     background-color: var(--background);
+    /* Kills the double-tap-to-zoom gesture, which the viewport tag alone cannot
+       suppress on iOS. `manipulation` still allows panning and pinch-zoom, so
+       this targets the accidental double-tap specifically rather than breaking
+       scrolling. Set on <html> so it applies to the whole app; the bottom sheets
+       and the timetable grid set `pan-y` locally where they need to. */
+    touch-action: manipulation;
   }
 }
 

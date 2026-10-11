@@ -31,9 +31,17 @@
 // page decides whether it is "ready for offline use" by comparing the version
 // it recorded against that constant, so if the two drift the app believes it is
 // prepared while the cache this worker just emptied holds nothing.
-const CACHE_NAME = "schedly-cache-v8";
+const CACHE_NAME = "schedly-cache-v9";
 const RSC_CACHE = `${CACHE_NAME}-rsc`;
 const OFFLINE_URL = "/offline.html";
+
+/**
+ * How long a navigation waits on the network before falling back to cache.
+ *
+ * Only applies to full page loads. Client-side tab switches are separate and
+ * unaffected — they have their own cached payload and return instantly.
+ */
+const NAV_TIMEOUT_MS = 3000;
 
 /**
  * Ceiling on the runtime image cache, in entries.
@@ -436,14 +444,28 @@ self.addEventListener("fetch", (event) => {
   if (request.mode === "navigate") {
     event.respondWith(
       (async () => {
+        // Give the network a bounded amount of time before falling back.
+        //
+        // Without this the navigation waits out the browser's own timeout, which
+        // on a weak connection is tens of seconds. Long enough that the user
+        // concludes the app is broken and taps again — which queues a second
+        // navigation and makes the recovery look even worse. Three seconds is
+        // well past a normal server round trip and well short of "this is
+        // frozen".
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), NAV_TIMEOUT_MS);
         try {
-          const res = await fetch(request);
+          const res = await fetch(request, { signal: controller.signal });
+          clearTimeout(timer);
           if (res.ok) {
             const cache = await caches.open(CACHE_NAME);
             cache.put(request, res.clone());
           }
           return res;
         } catch {
+          // The abort above is what usually lands here, so the timer must be
+          // cleared on this path too or it fires into a discarded branch.
+          clearTimeout(timer);
           const cache = await caches.open(CACHE_NAME);
           // `ignoreVary` is required, not an optimisation.
           //
@@ -505,7 +527,26 @@ self.addEventListener("fetch", (event) => {
   // Next.js fetches these when switching tabs client-side. Caching them lets
   // previously visited tabs load instantly and work offline.
   const isRsc = request.headers.get("RSC") === "1" || url.searchParams.has("__rsc");
-  if (isSameOrigin && isRsc) {
+
+  // Prefetches are deliberately NOT intercepted.
+  //
+  // Next.js sends two different payloads for the same route, and the
+  // difference is everything:
+  //
+  //   prefetch          → `Next-Router-Prefetch: 1`, partial. Just the static
+  //                       shell and loading states, fetched ahead of a tap.
+  //   real navigation   → no prefetch header, complete. The actual page data.
+  //
+  // Caching both under one key meant a tap could be served the partial one.
+  // Next.js then has no data to render, concludes the client-side navigation
+  // failed, and falls back to a full page load — which is the white flash and
+  // hard refresh, and offline is what dragged it to the dashboard.
+  //
+  // Letting prefetches bypass the worker entirely costs a little bandwidth on
+  // pages the user never opens. Caching them wrongly costs every navigation on
+  // every page they do.
+  const isPrefetch = request.headers.get("Next-Router-Prefetch") === "1";
+  if (isSameOrigin && isRsc && !isPrefetch) {
     event.respondWith(
       (async () => {
         const cache = await caches.open(RSC_CACHE);
