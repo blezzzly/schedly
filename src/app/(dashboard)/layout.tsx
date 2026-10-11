@@ -8,7 +8,7 @@ import { Menu, ArrowLeft, Settings } from "lucide-react";
 import { SkipNavigation } from "@/components/skip-navigation";
 import { Sidebar } from "@/components/sidebar";
 import { BottomNav } from "@/components/bottom-nav";
-import { OfflineBanner } from "@/components/offline-banner";
+import { ConnectionStatus } from "@/components/connection-status";
 import { GuestStatus } from "@/components/guest-status";
 import { NotificationBell } from "@/components/notification-bell";
 import { useThemeConfig } from "@/features/theme";
@@ -24,9 +24,11 @@ import {
   getNotificationDetailSnapshot,
   subscribeNotificationDetail,
 } from "@/lib/notification-detail-store";
-import { registerOfflineHandler, startOfflineQueueSync } from "@/lib/offline-queue";
+import { authRequired, flushOfflineWrites, getPendingCount, registerOfflineHandler, startOfflineQueueSync } from "@/lib/offline-queue";
 import { OFFLINE_ROUTES, OFFLINE_CACHE_VERSION } from "@/lib/offline-routes";
-import { saveSchedule } from "@/app/(dashboard)/classes/actions";
+import { refreshReadiness } from "@/lib/offline-readiness";
+import { getLowDataSnapshot, refreshIntervalMs, subscribeLowData } from "@/lib/low-data";
+import { saveSchedule, deleteSchedule, updateScheduleDetails } from "@/app/(dashboard)/classes/actions";
 import { createNote } from "@/app/(dashboard)/notes/actions";
 
 // Loaded on demand. The quick-add panel pulls in the whole capture flow
@@ -55,9 +57,54 @@ function refused(error: string): Error & { permanent: boolean } {
   return Object.assign(new Error(error), { permanent: true });
 }
 
+/**
+ * The session is gone.
+ *
+ * Kept queued rather than dropped: the work is real, the user will very
+ * probably sign back in, and throwing away a timetable because a cookie
+ * expired would be the worst possible response to a routine event.
+ */
+function needsAuth(error: string): Error & { authRequired: boolean } {
+  return authRequired(error);
+}
+
 registerOfflineHandler("schedule.create", async (payload) => {
   const result = await saveSchedule(payload);
-  if (!result.success) throw refused(result.error ?? "Schedule was rejected");
+  if (!result.success) {
+    // "Unauthorized" means the session, not the data, is the problem — the two
+    // need opposite handling, so they are not collapsed into `refused`.
+    if (/unauthorized/i.test(result.error ?? "")) throw needsAuth(result.error!);
+    throw refused(result.error ?? "Schedule was rejected");
+  }
+});
+
+registerOfflineHandler("schedule.update", async (payload) => {
+  const { scheduleId, patch, serverVersion } = payload as {
+    scheduleId: string;
+    patch: Record<string, unknown>;
+    serverVersion?: string;
+  };
+  const result = await updateScheduleDetails(scheduleId, patch, serverVersion);
+  if (result.success) return;
+  if (/unauthorized/i.test(result.error)) throw needsAuth(result.error);
+  // A conflict is permanent in the sense that retrying cannot fix it — the
+  // other device's change is there to stay. Dropping the entry stops the queue
+  // blocking behind it, and the local copy is marked so the user can decide.
+  if ("conflict" in result && result.conflict) {
+    throw refused(result.error);
+  }
+  throw refused(result.error ?? "Edit was rejected");
+});
+
+registerOfflineHandler("schedule.delete", async (payload) => {
+  const { scheduleId } = payload as { scheduleId: string };
+  const result = await deleteSchedule(scheduleId);
+  if (result.success) return;
+  if (/unauthorized/i.test(result.error ?? "")) throw needsAuth(result.error!);
+  // Already gone counts as done. The user asked for it to not exist, and it
+  // does not — retrying a delete of a deleted row forever helps nobody.
+  if (/not found/i.test(result.error ?? "")) return;
+  throw refused(result.error ?? "Delete was rejected");
 });
 
 registerOfflineHandler("note.create", async (payload) => {
@@ -79,6 +126,14 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
     () => false,
   );
   const showButton = !open;
+  // Subscribing rather than reading once, so turning Low Data Mode on in
+  // Settings takes effect on this screen immediately instead of at the next
+  // full page load.
+  const lowDataEnabled = useSyncExternalStore(
+    subscribeLowData,
+    getLowDataSnapshot,
+    () => false
+  );
   const pathname = usePathname();
   const router = useRouter();
   const [avatarError, setAvatarError] = useState(false);
@@ -218,6 +273,13 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
           // Re-arm pending class-reminder alarms after every app open so they
           // still fire even if the tab/SW was closed since they were set.
           reg.active?.postMessage({ type: "REARM_ALARMS" });
+
+          // Ask the browser to wake us if a connection returns while the app is
+          // closed. Purely additive — the foreground triggers below are what
+          // actually guarantee delivery, and they are not disabled either way.
+          if (getPendingCount() > 0) {
+            reg.active?.postMessage({ type: "REGISTER_SYNC", tag: "schedly-sync" });
+          }
         })
         .catch(() => {});
     }, 3000);
@@ -293,12 +355,53 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
     return startOfflineQueueSync();
   }, [user]);
 
+  // Tell the status indicator what this device has actually got stored, rather
+  // than letting it guess. Runs on mount and whenever the worker takes over,
+  // which is the moment a newly-installed app becomes controllable.
+  useEffect(() => {
+    if (!userId) return;
+    let cancelled = false;
+    const check = () => {
+      if (cancelled) return;
+      refreshReadiness().catch(() => {});
+    };
+    check();
+
+    const onControllerChange = () => {
+      // A new worker means a new cache, and a new cache means the old
+      // "prepared" answer is no longer true. Re-measure rather than leaving a
+      // confident "Ready for offline use" over an empty cache.
+      check();
+    };
+    navigator.serviceWorker?.addEventListener("controllerchange", onControllerChange);
+
+    // Background Sync asks the worker to wake us when connectivity returns. Only
+    // browsers that implement it will ever send this; everywhere else the
+    // online/focus/visibility triggers in the queue do the same work.
+    const onSyncRequested = (e: MessageEvent) => {
+      if ((e.data as { type?: string })?.type !== "SYNC_REQUESTED") return;
+      void flushOfflineWrites();
+    };
+    navigator.serviceWorker?.addEventListener("message", onSyncRequested);
+
+    return () => {
+      cancelled = true;
+      navigator.serviceWorker?.removeEventListener("controllerchange", onControllerChange);
+      navigator.serviceWorker?.removeEventListener("message", onSyncRequested);
+    };
+  }, [userId]);
+
   // Client heartbeat — QStash isn't configured in this deployment, so exact-
   // time class reminders only fire when something checks for them. Poll the
   // dispatcher every 5 min while the app is open (and on every focus/visibility
   // change) so enabled reminders actually go out within a reasonable window.
   // Deduped server-side via lastSentAt/lastStartSentAt, so frequent polling
   // never double-sends.
+  //
+  // Low Data Mode turns the timer off but not the checks: the user opening the
+  // app and switching back to it is a deliberate act, and this request is what
+  // makes reminders actually go out. What it stops is the app deciding on its
+  // own, every five minutes, to spend data on a heartbeat nobody is watching.
   useEffect(() => {
     if (!user) return;
     const tick = () => {
@@ -313,16 +416,17 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
       cachedAction("layout:dispatch", () => dispatchUserReminders(), 60_000).catch(() => {});
     };
     tick();
-    const id = window.setInterval(tick, 300_000);
+    const interval = refreshIntervalMs(300_000);
+    const id = interval === null ? null : window.setInterval(tick, interval);
     const onVis = () => tick();
     document.addEventListener("visibilitychange", onVis);
     window.addEventListener("focus", onVis);
     return () => {
-      clearInterval(id);
+      if (id !== null) clearInterval(id);
       document.removeEventListener("visibilitychange", onVis);
       window.removeEventListener("focus", onVis);
     };
-  }, [user]);
+  }, [user, lowDataEnabled]);
 
   useEffect(() => {
     if (needsOnboarding) router.replace("/onboarding");
@@ -534,7 +638,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
       {!isImmersive && !isProfile && !isNotifications && !isSettings && !isAdmin && (
         <BottomNav hidden={open} />
       )}
-      {!isImmersive && <OfflineBanner />}
+      {!isImmersive && <ConnectionStatus />}
 
       {/* Guest banner + the sign-in claim that hands a guest's data to a real
           account. Suppressed on the same full-screen pages as the bottom nav. */}

@@ -5,6 +5,10 @@ keep the rest of term organised around it.
 
 Mobile-first and installable as a PWA. Everything works offline once loaded.
 
+Open Schedly once with a connection and it saves itself to the device: your
+schedules, notes and study tools all open with no signal after that. See
+[Offline and low-data mode](#offline-and-low-data-mode).
+
 ## What it does
 
 - **Scan a schedule** — upload a timetable photo and it is read into a real
@@ -102,6 +106,74 @@ Uploaded images are validated by magic bytes, not by the `Content-Type` header,
 since that header is attacker-controlled. Allowed formats are JPEG, PNG, GIF,
 WebP and BMP, up to 20 MB. Rate limits are applied per user.
 
+## Offline and low-data mode
+
+### What works offline, and what does not
+
+A browser cannot download a site it has never seen, so **the first visit always
+needs a connection**. After that visit, the app shell and every screen listed in
+`OFFLINE_ROUTES` open with no signal, along with anything you have opened while
+connected.
+
+Server-dependent and honestly labelled as such: scanning a timetable (OCR and
+AI both run server-side), sharing a schedule by code, and push notifications
+arriving.
+
+Works offline: viewing, creating, editing, deleting and searching your
+schedules; notes, todos, the focus timer, the GWA calculator and everything else
+that reads from the local cache.
+
+### How local data is stored
+
+IndexedDB (`schedly-offline`), schema v3:
+
+| Store | Key | Holds |
+|---|---|---|
+| `data` | `a:<account>:<name>` | Cached schedules, notes, profile |
+| `queue` | entry id | Writes waiting to reach the server |
+| — | `meta:*` | Readiness markers, the last-used account |
+
+**Every key is namespaced by account.** Signing out does not erase anything — it
+makes the previous account's rows unreachable, so unsynced work survives while
+being invisible to whoever signs in next. Settings → *Offline & data* → *Erase
+offline data* is the only thing that deletes, for a genuinely shared device.
+
+Queued writes carry an `accountId`, an `attempts` count, a `nextAttemptAt`
+backoff and an `idempotencyKey`. That last one is stored on the schedule row, so
+a retry whose response was lost resolves to the original schedule instead of
+creating a second copy.
+
+### When things sync
+
+Triggers: app start, `online`, window focus, tab visible, a 60s heartbeat, and
+Background Sync where the browser has it. Before replaying, the queue probes
+`/api/ping` — because `navigator.onLine` reports "online" on a phone whose every
+request is failing, and trusting it fires doomed requests on metered data.
+
+Retries use exponential backoff with jitter (15s → 15min). A write the server
+refuses is dropped; one that never got an answer is kept. An expired session
+keeps its work and waits.
+
+### Low Data Mode
+
+Settings → *Offline & data*. Stops background polling and optional prefetching,
+and makes search submit-based instead of per-keystroke. It hides nothing and
+breaks nothing — it changes how much is fetched, never whether the app works.
+It also turns itself on when the browser reports `saveData` or a 2G/3G
+connection.
+
+Schedly does **not** provide free mobile data or bypass carrier billing.
+Zero-rating is a carrier agreement, not a feature of this app.
+
+### Testing it
+
+Settings → *Offline & data* → *Prepare for offline use*, then use DevTools →
+Network → *Offline* and reopen each screen. The readiness card reports the real
+number of screens that failed to save rather than a green tick.
+
+The service worker is registered in production only. In dev it does no caching
+at all, because dev chunk URLs are rebuilt on every restart.
+
 ## Deployment
 
 Deployed on Vercel. A few things to know:
@@ -111,6 +183,9 @@ Deployed on Vercel. A few things to know:
   `CRON_SECRET`.
 - Run `npx prisma migrate deploy` before the first deploy against a new
   database.
+- Service workers and `navigator.storage.persist()` both require a secure
+  context. Serve production over HTTPS; `http://localhost` counts as secure, so
+  testing offline behaviour works locally without a certificate.
 
 ## License
 

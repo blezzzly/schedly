@@ -42,14 +42,26 @@ export async function saveSchedule(data: unknown): Promise<SaveScheduleResult> {
   }
 
   try {
-    const schedule = await scheduleService.create(session.user.id, parsed.data);
-    auditLog("schedule.create", { userId: session.user.id, scheduleId: schedule.id, title: parsed.data.title });
-    const classCount = parsed.data.classes.length;
-    await notificationService.create(session.user.id, {
-      type: "schedule_update",
-      title: "Schedule Uploaded",
-      body: `${parsed.data.title} is ready — ${classCount} class${classCount !== 1 ? "es" : ""} added.`,
-    });
+    // `createIdempotent` when the device sent a key (an offline create being
+    // replayed), plain `create` otherwise. Online callers never send one, so
+    // their behaviour — including re-uploading the same photo producing a
+    // second schedule — is unchanged.
+    const { schedule, deduped } = parsed.data.clientKey
+      ? await scheduleService.createIdempotent(session.user.id, parsed.data)
+      : { schedule: await scheduleService.create(session.user.id, parsed.data), deduped: false };
+
+    // A replayed write already did all of this the first time it landed.
+    // Repeating it would put a second "Schedule Uploaded" notification in the
+    // user's tray for a timetable they already know about.
+    if (!deduped) {
+      auditLog("schedule.create", { userId: session.user.id, scheduleId: schedule.id, title: parsed.data.title });
+      const classCount = parsed.data.classes.length;
+      await notificationService.create(session.user.id, {
+        type: "schedule_update",
+        title: "Schedule Uploaded",
+        body: `${parsed.data.title} is ready — ${classCount} class${classCount !== 1 ? "es" : ""} added.`,
+      });
+    }
     return { success: true, scheduleId: schedule.id };
   } catch (err) {
     console.error("[SAVE_SCHEDULE]", err);
@@ -69,6 +81,77 @@ export async function deleteSchedule(scheduleId: string): Promise<{ success: boo
   } catch (err) {
     console.error("[DELETE_SCHEDULE]", err);
     return { success: false, error: "Failed to delete schedule" };
+  }
+}
+
+/**
+ * Rename or re-flag a schedule. Used by the offline queue to replay an edit.
+ *
+ * `expectedUpdatedAt` is the point of the whole function. An edit made offline
+ * is applied days later, and by then the same schedule may well have been
+ * changed on another device — a laptop at home, a phone at school. Writing
+ * blindly would silently discard whichever change lost, which is the one
+ * outcome worse than asking the user. So when the stored version no longer
+ * matches what the device based its edit on, this reports a conflict and
+ * changes nothing.
+ *
+ * Omitting it keeps the old unconditional behaviour, so the online edit path is
+ * untouched by any of this.
+ */
+export async function updateScheduleDetails(
+  scheduleId: string,
+  patch: { title?: string; semester?: string | null; academicYear?: string | null; isActive?: boolean },
+  expectedUpdatedAt?: string
+): Promise<
+  | { success: true }
+  | { success: false; error: string }
+  | { success: false; conflict: true; error: string }
+> {
+  const session = await auth.api.getSession({ headers: await headers() });
+  if (!session) return { success: false, error: "Unauthorized" };
+
+  if (patch.title !== undefined && !patch.title.trim()) {
+    return { success: false, error: "Schedule title is required" };
+  }
+
+  try {
+    const current = await db.schedule.findFirst({
+      where: { id: scheduleId, userId: session.user.id },
+      select: { id: true, updatedAt: true },
+    });
+    // Ownership and existence are checked together: a schedule belonging to
+    // somebody else must be indistinguishable from one that does not exist.
+    if (!current) return { success: false, error: "Schedule not found" };
+
+    if (expectedUpdatedAt) {
+      const expected = new Date(expectedUpdatedAt);
+      // An unparseable value must not be treated as a match — that would let a
+      // malformed client silently skip the check entirely.
+      if (Number.isNaN(expected.getTime()) || expected.getTime() !== current.updatedAt.getTime()) {
+        return {
+          success: false,
+          conflict: true,
+          error: "This schedule changed on another device. Your edit was not applied.",
+        };
+      }
+    }
+
+    await scheduleService.update(scheduleId, session.user.id, {
+      title: patch.title?.trim(),
+      semester: patch.semester,
+      academicYear: patch.academicYear,
+    });
+    if (patch.isActive !== undefined) {
+      await db.schedule.update({
+        where: { id: scheduleId },
+        data: { isActive: patch.isActive },
+      });
+    }
+    auditLog("schedule.edit", { userId: session.user.id, scheduleId });
+    return { success: true };
+  } catch (err) {
+    console.error("[UPDATE_SCHEDULE]", err);
+    return { success: false, error: "Failed to update schedule" };
   }
 }
 

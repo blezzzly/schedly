@@ -3,7 +3,12 @@ import { type NextRequest, NextResponse } from "next/server";
 import { checkRateLimit } from "@/server/lib/security";
 
 const publicRoutes = ["/login", "/register", "/forgot-password", "/reset-password", "/", "/u"];
-const publicApiRoutes = ["/api/auth", "/api/version", "/api/push", "/api/notifications", "/api/cron", "/api/upload", "/api/reminders/fire"];
+// `/api/ping` is public on purpose. It is the reachability probe the offline
+// sync queue uses before replaying queued writes, and it has to answer for a
+// signed-out user too — otherwise the queue would read "unauthorized" as "no
+// network" and show an offline banner while perfectly online. It returns a
+// constant and touches nothing, so there is nothing there to protect.
+const publicApiRoutes = ["/api/auth", "/api/version", "/api/ping", "/api/push", "/api/notifications", "/api/cron", "/api/upload", "/api/reminders/fire"];
 const verificationRoutes = ["/verify-email"];
 
 export async function proxy(request: NextRequest) {

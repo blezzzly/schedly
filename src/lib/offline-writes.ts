@@ -14,9 +14,52 @@
  * the visible half worked.
  */
 
-import { cacheRead, cacheWrite, isNetworkError } from "@/lib/offline-cache";
-import { enqueueOfflineWrite } from "@/lib/offline-queue";
+import { cacheRead, cacheRemove, cacheWrite, isNetworkError } from "@/lib/offline-cache";
+import { dropPendingWrite, enqueueOfflineWrite, listPendingWrites } from "@/lib/offline-queue";
 import type { ExtractedClass } from "@/features/upload/hooks/use-upload";
+
+/**
+ * Where a local record is in its life.
+ *
+ * This replaced a bare `pendingSync: boolean`, which could not tell "saved here
+ * and never sent" from "sent and the server refused it" — two states that need
+ * completely different responses from the user. The spec's list is followed
+ * literally so the wording in the UI matches what a user would expect from a
+ * file they can see.
+ *
+ * - `local`          — saved on this device, not yet offered to the server.
+ * - `queued`         — waiting to be sent.
+ * - `syncing`        — a request is in flight right now.
+ * - `synced`         — the server has it.
+ * - `failed`         — the server answered and said no, or it could not be
+ *                      reached. The record stays; this is a report, not a
+ *                      deletion.
+ * - `conflict`       — the server holds a different version and someone has to
+ *                      decide. Never resolved automatically.
+ */
+export type SyncState =
+  | "local"
+  | "queued"
+  | "syncing"
+  | "synced"
+  | "failed"
+  | "conflict";
+
+/** One short word for a badge. Keeps the schedule list readable. */
+export const SYNC_LABEL: Record<SyncState, string> = {
+  local: "Saved on this device",
+  queued: "Waiting to sync",
+  syncing: "Syncing",
+  synced: "Synced",
+  failed: "Not synced",
+  conflict: "Needs your attention",
+};
+
+/** True while the record still owes the server a write. */
+export function isPendingSync(state?: SyncState): boolean {
+  return state === "local" || state === "queued" || state === "syncing" || state === "failed";
+}
+
 
 /**
  * Fired after this device's cache is updated, so a list already on screen can
@@ -28,16 +71,27 @@ import type { ExtractedClass } from "@/features/upload/hooks/use-upload";
  */
 export const LOCAL_WRITE_EVENT = "schedly:local-write";
 
-/** Mirrors the shape `scheduleRepository.findByUser` returns, plus a local marker. */
-type LocalSchedule = {
+/** Mirrors the shape `scheduleRepository.findByUser` returns, plus local state. */
+export type LocalSchedule = {
   id: string;
+  /** Idempotency key for the queued create that will carry this to the server. */
+  clientKey?: string;
   title: string;
   semester: string | null;
   academicYear: string | null;
   isActive: boolean;
   createdAt: Date | string;
-  /** True while this schedule exists only on this device. */
+  updatedAt?: Date | string;
+  /** Where this record is in its life. See `SyncState`. */
+  syncState?: SyncState;
+  /**
+   * Kept alongside `syncState` because pages already branch on it, and because
+   * records written by an older build have it and nothing else. Anything
+   * reading sync detail should use `syncState`.
+   */
   pendingSync?: boolean;
+  /** Set when a queued write for this record was refused by the server. */
+  syncError?: string | null;
   classes: Array<{
     id: string;
     subject: string;
@@ -80,6 +134,93 @@ function localId(prefix: string): string {
 }
 
 /**
+ * Idempotency key for one offline write.
+ *
+ * Generated once, when the write is queued, and reused by every retry of it. The
+ * server stores it on the schedule and treats a repeat as the same write, which
+ * is what stops a retry whose response was lost from producing a second copy of
+ * a timetable the user already has.
+ */
+export function newIdempotencyKey(prefix: string): string {
+  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/* --- Validation ------------------------------------------------------------
+ * Checked on the device, before anything is written or queued, so an offline
+ * user gets the same immediate answer an online one gets from the server's
+ * schema rather than discovering the problem minutes later when it syncs.
+ * Deliberately the same rules as `saveScheduleSchema`, and only the ones that
+ * can be judged without a round trip.
+ */
+
+export type ScheduleValidation = {
+  ok: boolean;
+  error?: string;
+};
+
+/**
+ * Thrown when a hand-built schedule fails local validation.
+ *
+ * Distinct from a network failure on purpose. A network error means "saved it,
+ * will sync later"; this means "not saved, fix it and try again", and the UI
+ * has to say different things for the two. Anything that catches errors from
+ * `saveScheduleForOffline` must let this one through rather than queueing the
+ * invalid write for a server to reject hours later.
+ */
+export class OfflineValidationError extends Error {
+  readonly validation = true;
+  constructor(message: string) {
+    super(message);
+    this.name = "OfflineValidationError";
+  }
+}
+
+/** True for "HH:MM" on a 24-hour clock. */
+const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
+
+/**
+ * Validate a schedule the user built by hand.
+ *
+ * Mirrors `saveScheduleSchema`: a title, at least one class, each with a
+ * subject, at least one day, and a start and end that parse. The one rule
+ * added is that a class must end after it starts — the server accepts an
+ * overnight range, but that is nearly always a typo on a timetable, and it is
+ * far cheaper to say so now than to render a class that runs backwards.
+ */
+export function validateOfflineSchedule(input: {
+  title?: string;
+  classes?: Array<{
+    subject?: string;
+    days?: string[];
+    startTime?: string;
+    endTime?: string;
+  }>;
+}): ScheduleValidation {
+  if (!input.title?.trim()) {
+    return { ok: false, error: "Schedule title is required" };
+  }
+  const classes = input.classes ?? [];
+  if (classes.length === 0) {
+    return { ok: false, error: "At least one class is required" };
+  }
+  for (const c of classes) {
+    if (!c.subject?.trim()) {
+      return { ok: false, error: "Every class needs a subject" };
+    }
+    if (!c.days || c.days.length === 0) {
+      return { ok: false, error: `"${c.subject}" has no days assigned` };
+    }
+    if (!TIME_RE.test(c.startTime ?? "") || !TIME_RE.test(c.endTime ?? "")) {
+      return { ok: false, error: `"${c.subject}" has an invalid time` };
+    }
+    if (c.endTime! <= c.startTime!) {
+      return { ok: false, error: `"${c.subject}" ends before it starts` };
+    }
+  }
+  return { ok: true };
+}
+
+/**
  * Persist a manually created schedule to this device and queue it for the server.
  *
  * Returns false only when the schedule could not be shown to the user, which
@@ -88,13 +229,29 @@ function localId(prefix: string): string {
 export async function saveScheduleForOffline(
   input: OfflineScheduleInput
 ): Promise<boolean> {
+  // Validate here, not on the server. Offline there is no server, so this is
+  // the only check the user gets before the work is stored — and a bad entry
+  // that syncs hours later is a far worse experience than a refusal now.
+  const validation = validateOfflineSchedule(input);
+  if (!validation.ok) {
+    throw new OfflineValidationError(validation.error ?? "That schedule is not valid.");
+  }
+
+  const now = new Date().toISOString();
+  // Minted once, here, and reused by every retry of this write. That is what
+  // makes a resend idempotent rather than a second timetable.
+  const clientKey = newIdempotencyKey("sched");
+
   const local: LocalSchedule = {
     id: localId("sched"),
+    clientKey,
     title: input.title,
     semester: input.semester,
     academicYear: input.academicYear,
     isActive: true,
-    createdAt: new Date().toISOString(),
+    createdAt: now,
+    updatedAt: now,
+    syncState: "queued",
     pendingSync: true,
     classes: input.classes.map((c, i) => ({
       id: localId("cls"),
@@ -121,7 +278,12 @@ export async function saveScheduleForOffline(
   await cacheWrite("schedule:list", merged);
 
   // The durable half.
-  await enqueueOfflineWrite("schedule.create", input, `Schedule — ${input.title}`);
+  await enqueueOfflineWrite(
+    "schedule.create",
+    { ...input, clientKey },
+    `Schedule — ${input.title}`,
+    { idempotencyKey: clientKey }
+  );
 
   // Tell any list already on screen to re-read the cache.
   //
@@ -134,6 +296,132 @@ export async function saveScheduleForOffline(
     window.dispatchEvent(new CustomEvent(LOCAL_WRITE_EVENT, { detail: { key: "schedule:list" } }));
   }
   return true;
+}
+
+/* --- Editing and deleting --------------------------------------------------
+ * Creating offline was the first case; these are the other two, and they are
+ * not symmetric with it.
+ *
+ * A create is safe to queue blind, because there is nothing on the server to
+ * disagree with. An edit is not: the schedule may have changed on another
+ * device since this one last saw it, so the queued write carries the version it
+ * was based on and the server is asked to refuse it if that version moved. That
+ * turns "last writer silently wins" into a conflict the user is told about,
+ * which is the only honest outcome when two devices both have the right to
+ * change the same timetable.
+ */
+
+/** Fields a local edit can change. */
+export type OfflineScheduleEdit = {
+  title?: string;
+  semester?: string | null;
+  academicYear?: string | null;
+  isActive?: boolean;
+};
+
+/**
+ * Edit a schedule on this device and queue the change.
+ *
+ * The cached list is updated first so the edit is visible immediately, then the
+ * write is queued. Returns false when the schedule is not in the local cache,
+ * which means the caller is looking at something this device has never loaded
+ * and must go to the network.
+ */
+export async function updateScheduleForOffline(
+  scheduleId: string,
+  patch: OfflineScheduleEdit
+): Promise<boolean> {
+  const list = ((await cacheRead<LocalSchedule[]>("schedule:list")) ?? []) as LocalSchedule[];
+  const index = list.findIndex((s) => s.id === scheduleId);
+  if (index === -1) return false;
+
+  const current = list[index]!;
+  // `serverVersion` is what this edit was based on. The server compares it and
+  // refuses the write if the row has moved on, rather than overwriting a change
+  // made on another device.
+  const serverVersion = (current as { serverVersion?: string }).serverVersion;
+
+  const updated: LocalSchedule = {
+    ...current,
+    ...patch,
+    updatedAt: new Date().toISOString(),
+    // Already unsynced work stays unsynced — do not downgrade a queued record
+    // to "synced" because the user edited it again while still offline.
+    syncState: "queued",
+    pendingSync: true,
+    syncError: null,
+  };
+  if (serverVersion) (updated as { serverVersion?: string }).serverVersion = serverVersion;
+
+  const next = [...list];
+  next[index] = updated;
+  await cacheWrite("schedule:list", next);
+  await cacheRemove(`schedule:detail:${scheduleId}`);
+
+  await enqueueOfflineWrite(
+    "schedule.update",
+    { scheduleId, patch, serverVersion },
+    `Edit — ${patch.title ?? current.title}`
+  );
+
+  notifyLocalWrite();
+  return true;
+}
+
+/**
+ * Delete a schedule on this device and queue the deletion.
+ *
+ * The record is hidden immediately, because a delete the user cannot see take
+ * effect is indistinguishable from a broken button.
+ *
+ * If the schedule has unsynced work, that work is dropped along with it, and
+ * the user is told: the alternative is the queued create landing on the server
+ * after the delete, resurrecting a timetable they just removed. Either order is
+ * defensible, but "I deleted it and it came back" is not something to ship on
+ * its own.
+ */
+export async function deleteScheduleForOffline(
+  scheduleId: string
+): Promise<{ queued: boolean; discardedWork: boolean }> {
+  const list = ((await cacheRead<LocalSchedule[]>("schedule:list")) ?? []) as LocalSchedule[];
+  const target = list.find((s) => s.id === scheduleId);
+  if (!target) return { queued: false, discardedWork: false };
+
+  const discardedWork = isPendingSync(target.syncState) && Boolean(target.clientKey);
+
+  if (discardedWork) {
+    // Cancel the create rather than queueing a delete against a schedule the
+    // server has never heard of.
+    const queued = await listPendingWrites();
+    for (const entry of queued) {
+      if (entry.kind === "schedule.create" && target.clientKey && entry.idempotencyKey === target.clientKey) {
+        await dropPendingWrite(entry.id);
+      }
+    }
+  } else {
+    await enqueueOfflineWrite(
+      "schedule.delete",
+      { scheduleId },
+      `Delete — ${target.title}`
+    );
+  }
+
+  await cacheWrite("schedule:list", list.filter((s) => s.id !== scheduleId));
+  await cacheRemove(`schedule:detail:${scheduleId}`);
+  notifyLocalWrite();
+  return { queued: !discardedWork, discardedWork };
+}
+
+/**
+ * Tell any list already on screen to re-read the cache.
+ *
+ * Shared by the write helpers so none of them can forget: navigating to the
+ * page you are already on does not remount it, so its mount-time fetch never
+ * runs again and a correctly-saved edit would stay invisible.
+ */
+function notifyLocalWrite(): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(LOCAL_WRITE_EVENT, { detail: { key: "schedule:list" } }));
 }
 
 /**
@@ -153,6 +441,7 @@ type LocalNote = {
   pinned: boolean;
   createdAt: Date | string;
   updatedAt: Date | string;
+  syncState?: SyncState;
   pendingSync?: boolean;
 };
 
@@ -177,6 +466,7 @@ export async function saveNoteForOffline(
     pinned: false,
     createdAt: now,
     updatedAt: now,
+    syncState: "queued",
     pendingSync: true,
   };
 

@@ -1,0 +1,97 @@
+<!doctype html>
+<!--
+  Last-resort page, shown only when a navigation cannot be served from the
+  cache at all.
+
+  It exists for one narrow case: a first visit that never finished loading, or a
+  brand-new install opened with no connection. There is genuinely no app to
+  render then — the HTML and the JS chunks were never downloaded — so this page
+  must not pretend otherwise. It says plainly what happened and what to do.
+
+  Deliberately a standalone file rather than a React route: it has to work when
+  the app's own JavaScript has not loaded, so it cannot depend on a framework,
+  a chunk, or any stylesheet beyond the two inline rules below. That also keeps
+  it under a kilobyte, which matters because it is precached on every install.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Schedly — no connection</title>
+    <!-- Match the app's theme so an offline launch does not flash white. -->
+    <meta name="theme-color" content="#ffffff" />
+    <link rel="icon" href="/icons/icon-192.png" />
+    <style>
+      /* System fonts only. A webfont request here would be one more thing to
+         fail offline, and this page has to render with no network at all. */
+      :root { color-scheme: light dark; }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        display: grid;
+        place-items: center;
+        padding: 1.5rem;
+        font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        background: #ffffff;
+        color: #1a1416;
+      }
+      @media (prefers-color-scheme: dark) {
+        body { background: #1a1416; color: #f7f2f4; }
+        .card { background: #241d20 !important; border-color: #3a2f33 !important; }
+        .muted { color: #b9a8ae !important; }
+      }
+      .card {
+        max-width: 26rem;
+        width: 100%;
+        text-align: center;
+        background: #fdfbfa;
+        border: 2px solid #e6dcd9;
+        border-radius: 1rem;
+        padding: 2rem 1.5rem;
+        box-shadow: 4px 4px 0 0 rgba(64, 31, 50, 0.18);
+      }
+      .icon {
+        width: 3.5rem; height: 3.5rem; margin: 0 auto 1rem;
+        display: grid; place-items: center; border-radius: 1rem;
+        background: rgba(236, 72, 153, 0.12); font-size: 1.5rem;
+      }
+      h1 { font-size: 1.25rem; margin: 0 0 0.5rem; letter-spacing: -0.01em; }
+      p { margin: 0 0 1rem; line-height: 1.6; font-size: 0.925rem; }
+      .muted { color: #6b5a61; font-size: 0.85rem; }
+      button {
+        width: 100%; margin-top: 0.5rem; padding: 0.85rem 1rem;
+        font: inherit; font-weight: 600; color: #fff; cursor: pointer;
+        background: linear-gradient(to right, #ec4899, #f472b6);
+        border: 0; border-radius: 999px;
+      }
+      button:disabled { opacity: 0.6; cursor: default; }
+    </style>
+  </head>
+  <body>
+    <main class="card">
+      <div class="icon" aria-hidden="true">📡</div>
+      <h1>Schedly isn&rsquo;t saved on this device yet</h1>
+      <p class="muted">
+        The app has to download itself once before it can open without a
+        connection. That hasn&rsquo;t finished here.
+      </p>
+      <p class="muted">
+        Connect to the internet and open Schedly again. After that it will open
+        without a connection.
+      </p>
+      <button id="retry" type="button">Try again</button>
+    </main>
+    <script>
+      // Reloading is the right action, not a full page reload loop: once the
+      // connection is back the navigation succeeds and the app takes over. The
+      // button is the manual version of the same thing for when the automatic
+      // one did not fire.
+      var btn = document.getElementById("retry");
+      function retry() { location.reload(); }
+      btn.addEventListener("click", retry);
+      // A connection that returns should not require the user to press anything.
+      window.addEventListener("online", retry);
+    </script>
+  </body>
+</html>

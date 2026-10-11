@@ -19,6 +19,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Skeleton as BoneSkeleton } from "boneyard-js/react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { SupportSchedly } from "@/features/support/components/support-schedly";
+import { OfflineDataTab } from "@/features/offline/offline-data-tab";
 
 type UserWithExtras = {
   firstName?: string;
@@ -42,7 +43,8 @@ export default function SettingsPage() {
   const initialTab =
     searchParams.get("tab") === "support" ||
     searchParams.get("tab") === "theme" ||
-    searchParams.get("tab") === "security"
+    searchParams.get("tab") === "security" ||
+    searchParams.get("tab") === "offline"
       ? (searchParams.get("tab") as string)
       : "account";
   const [activeTab, setActiveTab] = useState(initialTab);
@@ -127,6 +129,7 @@ export default function SettingsPage() {
           {[
             { id: "account", label: "Account" },
             { id: "security", label: "Security" },
+            { id: "offline", label: "Offline & data" },
             { id: "theme", label: "Theme" },
             { id: "support", label: "Support" },
           ].map((tab) => (
@@ -150,6 +153,7 @@ export default function SettingsPage() {
         <div className="min-w-0 flex-1">
           {activeTab === "account" && <AccountTab u={u} />}
           {activeTab === "security" && <SecurityTab />}
+          {activeTab === "offline" && <OfflineDataTab />}
           {activeTab === "theme" && <ThemeCard />}
           {activeTab === "support" && (
             <div className="space-y-3">

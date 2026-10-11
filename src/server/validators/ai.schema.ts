@@ -138,6 +138,11 @@ export const saveScheduleSchema = z.object({
     })
   ).min(1, "At least one class is required"),
   uploadId: z.string().optional(),
+  /// Idempotency key for a schedule created offline. Generated once on the
+  /// device and reused on every retry, so a retried create resolves to the
+  /// original schedule instead of a second copy. Optional — online creates
+  /// omit it.
+  clientKey: z.string().min(8).max(64).optional(),
 });
 
 export type SaveScheduleInput = z.infer<typeof saveScheduleSchema>;

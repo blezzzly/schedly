@@ -139,6 +139,12 @@ model Schedule {
   isActive     Boolean  @default(true) @map("is_active")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
+  /// Client-generated key for a schedule created offline, unique across the
+  /// table. A retry of the same queued write carries the same key and is
+  /// recognised as a duplicate, so a request that reached the server but whose
+  /// response was lost does not produce a second copy of the timetable.
+  /// Nullable because schedules created online never send one.
+  clientKey    String?  @unique @map("client_key")
 
   user    User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   classes Class[]

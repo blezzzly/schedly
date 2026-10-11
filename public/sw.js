@@ -26,8 +26,39 @@
 // signal the old worker gets to clear itself out: the activate handler deletes
 // caches that do not match, so a stale name here is what actually ships an old
 // offline behaviour to phones that already have the app installed.
-const CACHE_NAME = "schedly-cache-v7";
+//
+// MUST stay equal to OFFLINE_CACHE_VERSION in src/lib/offline-routes.ts. The
+// page decides whether it is "ready for offline use" by comparing the version
+// it recorded against that constant, so if the two drift the app believes it is
+// prepared while the cache this worker just emptied holds nothing.
+const CACHE_NAME = "schedly-cache-v8";
 const RSC_CACHE = `${CACHE_NAME}-rsc`;
+const OFFLINE_URL = "/offline.html";
+
+/**
+ * Ceiling on the runtime image cache, in entries.
+ *
+ * The app shell is fixed-size and safe to keep. Runtime images are not: a user
+ * scrolling a year of schedules with avatars and syllabus photos would
+ * otherwise grow the cache without limit until the browser evicts it wholesale
+ * — which throws away the app shell too, on a device that may have a few hundred
+ * megabytes to give.
+ *
+ * Counted in entries rather than bytes because Cache Storage cannot report a
+ * total cheaply; the oldest entries go first, so what is kept is what was used
+ * most recently.
+ */
+const MAX_IMAGE_ENTRIES = 120;
+
+/** Trim a cache to the newest `max` entries. */
+async function trimCache(cacheName, max) {
+  const cache = await caches.open(cacheName);
+  const keys = await cache.keys();
+  if (keys.length <= max) return;
+  // `cache.keys()` returns insertion order, so the front is the oldest.
+  const excess = keys.slice(0, keys.length - max);
+  await Promise.all(excess.map((k) => cache.delete(k)));
+}
 
 // Dev mode. The app registers this worker on localhost too — otherwise push
 // could only ever be tested against a production deploy — and the `?dev=1`
@@ -83,6 +114,10 @@ const PRECACHE_ASSETS = [
   "/icons/icon-512.png",
   "/images/logo.jpg",
   "/notif-icon.svg",
+  // The last-resort page for a device that has never completed a download.
+  // Without it the worker can only return a bare network error, which on a phone
+  // looks like the app crashed rather than "you have not downloaded it yet".
+  OFFLINE_URL,
 ];
 
 self.addEventListener("install", (event) => {
@@ -344,7 +379,47 @@ self.addEventListener("message", (event) => {
     );
   } else if (data.type === "REARM_ALARMS") {
     event.waitUntil(armAlarms());
+  } else if (data.type === "REGISTER_SYNC") {
+    // Ask the browser to wake us when a connection returns, so queued work can
+    // go out even if the user closed the app.
+    //
+    // Strictly an enhancement. Chrome fires it; Safari and Firefox do not
+    // implement Background Sync at all, and Firefox also drops it when the user
+    // closes every tab. The page's own foreground sync (online event, focus,
+    // visibilitychange, interval) is what actually guarantees delivery, and it
+    // is never disabled on the strength of this succeeding.
+    event.waitUntil(
+      (async () => {
+        try {
+          if (self.registration.sync) {
+            await self.registration.sync.register(data.tag || "schedly-sync");
+          }
+        } catch {
+          // Unsupported or permission-denied. Foreground sync covers it.
+        }
+      })()
+    );
   }
+});
+
+// Background Sync: the browser tells us a connection is back. The work itself
+// lives in the page — it owns the IndexedDB queue and the server actions, and
+// neither can be reached from here. So the best this can do is wake a window and
+// let it do what it already does.
+self.addEventListener("sync", (event) => {
+  if (event.tag && event.tag.indexOf("schedly") !== 0) return;
+  event.waitUntil(
+    (async () => {
+      const windows = await self.clients.matchAll({
+        type: "window",
+        includeUncontrolled: true,
+      });
+      for (const client of windows) {
+        // The page listens for this and runs its own flush.
+        client.postMessage({ type: "SYNC_REQUESTED" });
+      }
+    })()
+  );
 });
 
 self.addEventListener("fetch", (event) => {
@@ -409,14 +484,16 @@ self.addEventListener("fetch", (event) => {
           }
 
           // Nothing is cached at all — a first launch that never finished loading, or
-          // a brand-new install. There is no app to render, so this has to fail.
+          // a brand-new install. There is no app to render, so this has to fail,
+          // and it has to fail honestly.
           //
-          // It used to return /offline.html here. Removed: the page only ever
-          // appeared because of the Vary bug above, so it was a misleading
-          // "we've lost everything" card for a cache that was in fact full. Now
-          // that the lookup is correct this branch is genuinely rare, and a
-          // browser network error is the more honest signal for "we have nothing
-          // for you".
+          // A tiny standalone page, not the app shell. Serving the shell here
+          // would show a signed-out-looking app whose every request 404s behind
+          // it, which reads as broken in a much worse way than a page that says
+          // what is wrong. It is cached during install, so it costs a fraction of
+          // a kilobyte and is available in exactly this case.
+          const offline = await cache.match(OFFLINE_URL, { ignoreVary: true });
+          if (offline) return offline;
           return Response.error();
         }
       })()
@@ -440,6 +517,12 @@ self.addEventListener("fetch", (event) => {
           if (res.ok) {
             cache.put(request, res.clone());
             cache.put(pathKey, res.clone());
+            // Both the request-keyed and path-keyed copies are written, so this
+            // cache holds two entries per route. Capped for the same reason the
+            // image cache is: a long-lived install accumulates one pair per page
+            // ever opened, and evicting the app shell to make room for stale
+            // RSC payloads is the wrong trade.
+            trimCache(RSC_CACHE, MAX_IMAGE_ENTRIES).catch(() => {});
           }
           return res;
         });
@@ -467,12 +550,25 @@ self.addEventListener("fetch", (event) => {
         const cache = await caches.open(CACHE_NAME);
         const cached = await cache.match(request, { ignoreVary: true });
         if (cached) {
-          // Revalidate in the background so the next visit is fresh.
-          fetch(request)
-            .then((res) => {
-              if (res.ok) cache.put(request, res.clone());
-            })
-            .catch(() => {});
+          // Only revalidate what can actually change.
+          //
+          // `/_next/static/` filenames are content hashes: the file is renamed
+          // when its bytes change, so a cached chunk can never be stale. Asking
+          // the server about it anyway re-requests every script and stylesheet
+          // on every single visit — the single largest avoidable data cost in
+          // the app, and completely pointless.
+          //
+          // `/icons`, `/images` and the notification badge are fixed names, so
+          // those do get revalidated, in the background so the response served
+          // now is still instant.
+          const immutable = url.pathname.startsWith("/_next/static/");
+          if (!immutable) {
+            fetch(request)
+              .then((res) => {
+                if (res.ok) cache.put(request, res.clone());
+              })
+              .catch(() => {});
+          }
           return cached;
         }
         const res = await fetch(request);
@@ -505,7 +601,13 @@ self.addEventListener("fetch", (event) => {
         const cache = await caches.open(CACHE_NAME);
         try {
           const res = await fetch(request);
-          if (res.ok) cache.put(request, res.clone());
+          if (res.ok) {
+            cache.put(request, res.clone());
+            // Schedule photos are the largest thing this app stores offline, and
+            // they accumulate one per upload. Trimmed here so the cap holds even
+            // if the user never opens the settings page that also trims.
+            trimCache(CACHE_NAME, MAX_IMAGE_ENTRIES).catch(() => {});
+          }
           return res;
         } catch {
           return (await cache.match(request, { ignoreVary: true })) || Response.error();
@@ -528,7 +630,10 @@ self.addEventListener("fetch", (event) => {
           // Match the original request mode — images load as no-cors and the
           // opaque response can still be put() into the cache.
           const res = await fetch(request);
-          cache.put(request, res.clone()).catch(() => {});
+          cache.put(request, res.clone()).then(
+            () => trimCache(CACHE_NAME, MAX_IMAGE_ENTRIES).catch(() => {}),
+            () => {}
+          );
           return res;
         } catch {
           return (await cache.match(request, { ignoreVary: true })) || Response.error();

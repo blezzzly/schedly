@@ -23,7 +23,29 @@ export default function manifest(): MetadataRoute.Manifest {
     orientation: "portrait",
     background_color: "#ffffff",
     theme_color: "#ffffff",
+    // Shortcuts are the long-press menu on an installed Android app. They point
+    // at routes the service worker already precaches, so opening one from the
+    // home screen works offline like any other screen — a shortcut to a route
+    // that cannot load without a connection would be worse than no shortcut.
+    shortcuts: [
+      {
+        name: "Today's schedule",
+        short_name: "Today",
+        url: "/dashboard",
+        icons: [{ src: "/icons/icon-192.png", sizes: "192x192", type: "image/png" }],
+      },
+      {
+        name: "Classes",
+        short_name: "Classes",
+        url: "/classes",
+        icons: [{ src: "/icons/icon-192.png", sizes: "192x192", type: "image/png" }],
+      },
+    ],
     icons: [
+      // `any` first, then `maskable`. The maskable entry is the same artwork
+      // with the safe zone already respected, because Android crops a maskable
+      // icon to whatever shape the device's launcher uses and a circle-unsafe
+      // icon loses its edges on a squircle.
       { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
       { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
       {

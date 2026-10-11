@@ -37,6 +37,13 @@ export interface CreateScheduleInput {
   academicYear?: string | null;
   classes: CreateClassInput[];
   uploadId?: string;
+  /**
+   * Idempotency key from an offline create. When present, a repeat call with
+   * the same key returns the schedule that already exists instead of creating a
+   * second one, so a queued write that is retried after a lost response cannot
+   * duplicate the user's timetable.
+   */
+  clientKey?: string | null;
 }
 
 export const scheduleService = {
@@ -55,6 +62,23 @@ export const scheduleService = {
   async create(userId: string, input: CreateScheduleInput) {
     const now = new Date();
 
+    // Fast path for a retried offline create: the key already produced a
+    // schedule, so hand back that one. Checked before any write so the common
+    // retry costs one indexed read instead of a full transaction.
+    //
+    // `deduped` is carried out of the service rather than inferred by the
+    // caller, because the difference is not observable from the returned row —
+    // a replay and a first success return the same shape. Without it, every
+    // retry looked like a new schedule to the caller and re-fired the audit
+    // entry and the "Schedule Uploaded" notification.
+    if (input.clientKey) {
+      const existing = await db.schedule.findFirst({
+        where: { clientKey: input.clientKey, userId },
+        select: { id: true },
+      });
+      if (existing) return { ...existing, deduped: true };
+    }
+
     const userSettings = await db.user.findUnique({
       where: { id: userId },
       select: { defaultReminderMinutes: true },
@@ -69,6 +93,7 @@ export const scheduleService = {
           title: input.title,
           semester: input.semester ?? undefined,
           academicYear: input.academicYear ?? undefined,
+          clientKey: input.clientKey ?? undefined,
         },
       });
 
@@ -120,7 +145,40 @@ export const scheduleService = {
       return s;
     }, { maxWait: 10000, timeout: 30000 });
 
-    return schedule;
+    return { ...schedule, deduped: false };
+  },
+
+  /**
+   * Create a schedule, treating a repeated `clientKey` as the same write.
+   *
+   * The `clientKey` fast path in `create` closes the common retry, but two
+   * attempts can still pass it simultaneously — a background sync and a manual
+   * one, say — and then the second insert loses the unique index. Catching that
+   * specific violation and re-reading the row is what makes the guarantee hold
+   * under concurrency rather than just in sequence. Any *other* database error
+   * is rethrown, so a genuine failure is never disguised as success.
+   *
+   * `deduped` tells the caller this write had already been applied. That
+   * matters beyond correctness: the caller uses it to skip the audit entry and
+   * the "Schedule Uploaded" notification, so a replay is a no-op rather than
+   * three notifications for one timetable.
+   */
+  async createIdempotent(userId: string, input: CreateScheduleInput) {
+    try {
+      // `create` reports whether it inserted or recognised a replay.
+      const result = await this.create(userId, input);
+      return { schedule: result, deduped: result.deduped };
+    } catch (err) {
+      const code = (err as { code?: string })?.code;
+      if (input.clientKey && code === "P2002") {
+        const existing = await db.schedule.findFirst({
+          where: { clientKey: input.clientKey, userId },
+          select: { id: true },
+        });
+        if (existing) return { schedule: existing, deduped: true };
+      }
+      throw err;
+    }
   },
 
   async delete(id: string, userId: string) {

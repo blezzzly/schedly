@@ -1,0 +1,16 @@
+-- Idempotency key for schedules created offline.
+--
+-- The offline queue retries a write whose response was lost. Without a stable
+-- key, each retry would create another timetable. `client_key` is generated on
+-- the device when the schedule is queued and is reused for every retry of that
+-- same write, so the second attempt is recognised and returns the original
+-- schedule instead of inserting a duplicate.
+--
+-- The unique index is what makes this safe under a genuine race: two retries
+-- firing at once cannot both insert, because the second collides.
+--
+-- NULL is allowed and is not considered equal to any other NULL in a normal
+-- unique index, so every online-created schedule (which sends no key) is
+-- unaffected. Older databases already contain such rows, which is why the
+-- column has to be nullable rather than defaulted to ''.
+CREATE UNIQUE INDEX "schedules_client_key_key" ON "schedules"("client_key");

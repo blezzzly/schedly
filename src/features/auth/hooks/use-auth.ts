@@ -5,7 +5,16 @@ import { useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth-client";
 import { retry } from "@/lib/retry";
 import { useMounted } from "@/lib/use-mounted";
-import { cacheRead, cacheRemove, cacheWrite, isNetworkError, isOffline } from "@/lib/offline-cache";
+import {
+  cacheRead,
+  cacheRemove,
+  cacheWrite,
+  isNetworkError,
+  isOffline,
+  persistAccountPointer,
+  restoreAccountScope,
+} from "@/lib/offline-cache";
+import { refreshPendingCount } from "@/lib/offline-queue";
 
 type CachedUser = Record<string, unknown> & {
   username?: string;
@@ -37,6 +46,28 @@ export function useAuth() {
   const resolvedSession = mounted ? session : null;
   const user = resolvedSession?.user ?? offlineUser;
 
+  // Point the local database at the right account before anything reads or
+  // writes it. Runs once, before the effects below, because those effects cache
+  // the session under whatever scope is active — get this wrong and one
+  // account's profile lands in another's namespace, which is the exact leak the
+  // scoping exists to prevent.
+  const sessionUserId = (resolvedSession?.user as { id?: string } | undefined)?.id ?? "";
+
+  useEffect(() => {
+    if (!mounted) return;
+    restoreAccountScope()
+      .catch(() => null)
+      .then(() => {
+        // With no session we keep whatever scope the device recorded, so an
+        // offline launch still shows the signed-in user's own cached data —
+        // never another account's, because every read is namespaced.
+        if (sessionUserId) persistAccountPointer(sessionUserId).catch(() => {});
+      });
+    // Keyed on the id rather than the user object: better-auth hands back a
+    // fresh object each render, and an effect depending on one would re-run
+    // forever, re-opening the database on every frame.
+  }, [mounted, sessionUserId]);
+
   useEffect(() => {
     if (!mounted) return;
     if (resolvedSession?.user) {
@@ -66,6 +97,11 @@ export function useAuth() {
     if (!isPending && (error == null || (error as { status?: number }).status === 401)) {
       // The server confirmed there's no session (or it expired): drop any
       // stale cached session so it can't "log back in" when offline.
+      //
+      // Only the session copy is removed. The user's schedules, notes and
+      // queued writes stay: an expired session is not a reason to destroy
+      // unsynchronised work, and the user is very likely to sign back in and
+      // expect their timetable to still be there.
       cacheRemove("session:user")
         .catch(() => {})
         .then(() => setOfflineUser(null));
@@ -143,12 +179,29 @@ export function useAuth() {
   );
 
   const signOut = useCallback(async () => {
+    const accountId = (user as { id?: string } | null)?.id ?? null;
     await authClient.signOut();
     // Clear the cached session so it can't resurrect the user offline.
     setOfflineUser(null);
     cacheRemove("session:user").catch(() => {});
+
+    // Everything else that account saved stays on the device, but it is now
+    // unreachable: every read and write is namespaced by account, and the
+    // queue is filtered by it too, so whoever signs in next cannot see it or
+    // replay it. Deleting instead would throw away a timetable typed on a train
+    // that has not reached the server yet, which is precisely the work this
+    // whole feature exists to protect.
+    //
+    // A device that is genuinely shared is a different situation, and Settings
+    // has an explicit control for it that does erase everything.
+    if (accountId) {
+      // Recount so the pending badge does not keep showing the previous
+      // account's queue to somebody who has not signed in yet.
+      void refreshPendingCount().catch(() => {});
+    }
+
     router.push("/login");
-  }, [router]);
+  }, [router, user]);
 
   const forgotPassword = useCallback(
     async (email: string) => {
