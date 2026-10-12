@@ -174,13 +174,44 @@ body {
   }
 }
 
-/* Hide default browser scrollbars app-wide (scrolling still works) */
-* {
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-*::-webkit-scrollbar {
-  display: none;
+/* ===== Scrollbars: hidden, but scrolling fully functional =====
+
+   Scoped to the root scroller (html/body) on purpose. Do NOT widen this to
+   `*`: a universal selector is matched against every element on every style
+   recalc, and `*::-webkit-scrollbar` additionally makes the engine build and
+   consider a scrollbar pseudo-element for each candidate scroll container.
+   Across a page this size that reads as jank on the whole app, not just
+   wherever a bar would have been drawn.
+
+   `@layer base` is load-bearing too. Unlayered CSS outranks every layered
+   rule, so written at the top level this one rule would sit ABOVE all of
+   Tailwind's utilities and win against anything the design system set.
+
+   Chrome/Safari/Edge (Blink + WebKit) take the `::-webkit-scrollbar` rule and
+   report a zero-width scrollbar; Firefox takes `scrollbar-width: none`. Both
+   remove only the *visual* affordance — wheel, trackpad, touch, keyboard
+   (arrows / Page Up / Space / Home / End) and find-in-page all still scroll,
+   because none of them depend on the scrollbar being painted.
+
+   DO NOT add a themed/revealed scrollbar rule below this one. A later rule
+   matching the same selectors wins outright, which is exactly how the
+   desktop-only themed scrollbar that used to live further down this file
+   silently unhid every scrollbar on the site.
+
+   Inner scroll regions (sheet bodies, dropdowns, textareas) keep a visible
+   bar, which is also the better cue: a sheet taller than its viewport should
+   look scrollable. */
+@layer base {
+  html,
+  body {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  html::-webkit-scrollbar,
+  body::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 /* Allow the browser's native pull-to-refresh so pulling down at the top shows
@@ -241,46 +272,6 @@ body {
 .h-sheet-auto {
   max-height: 92vh;
   max-height: 92dvh;
-}
-
-/* Custom themed scrollbar — desktop only (mobile stays hidden) */
-@media (min-width: 768px) {
-  /* Always render the window scrollbar so the custom track is visible */
-  html {
-    overflow-y: scroll;
-  }
-  * {
-    scrollbar-width: thin;
-    scrollbar-color: var(--primary) transparent;
-  }
-  *::-webkit-scrollbar {
-    display: block;
-    width: 10px;
-    height: 10px;
-  }
-  *::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  *::-webkit-scrollbar-thumb {
-    background: linear-gradient(
-      to bottom,
-      color-mix(in oklch, var(--primary) 80%, white 20%),
-      var(--primary)
-    );
-    border-radius: 999px;
-    border: 2px solid transparent;
-    background-clip: padding-box;
-  }
-  *::-webkit-scrollbar-thumb:hover {
-    background: linear-gradient(
-      to bottom,
-      color-mix(in oklch, var(--primary) 95%, black 5%),
-      color-mix(in oklch, var(--primary) 85%, black 10%)
-    );
-    border-radius: 999px;
-    border: 2px solid transparent;
-    background-clip: padding-box;
-  }
 }
 
 @keyframes music-bar {
@@ -480,32 +471,11 @@ body {
 
 /* ===== Copy protection removed: text selection is allowed app-wide ===== */
 
-/* Thin, themed scrollbars to feel native */
 @layer utilities {
-  .scrollbar-thin {
-    scrollbar-width: thin;
-    scrollbar-color: color-mix(in oklch, var(--foreground) 18%, transparent) transparent;
-  }
-  .scrollbar-thin::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-  }
-  .scrollbar-thin::-webkit-scrollbar-thumb {
-    background-color: color-mix(in oklch, var(--foreground) 18%, transparent);
-    border-radius: 999px;
-  }
-  .scrollbar-thin::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  /* Hide scrollbar but keep scroll (horizontal carousels) */
-  .no-scrollbar {
-    -ms-overflow-style: none;
-    scrollbar-width: none;
-  }
-  .no-scrollbar::-webkit-scrollbar {
-    display: none;
-  }
+  /* `.scrollbar-thin` / `.no-scrollbar` used to live here. Both are unused,
+     and `.scrollbar-thin` re-showed a bar with the same
+     `*::-webkit-scrollbar` specificity as the global rule above —
+     reintroducing exactly the bug that note warns about. */
 
   /* Press feedback for cards / touch surfaces */
   .active\:scale-touch:active {

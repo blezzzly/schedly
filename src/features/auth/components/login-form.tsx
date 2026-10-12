@@ -94,8 +94,11 @@ export function LoginForm() {
     }
   }
 
+  // No shadow/border override on the Card below, on purpose: its base already
+  // carries the app's hard offset shadow and `border-foreground/70`. Overriding
+  // that with a soft blur made this the only panel on the site without it.
   return (
-    <Card className="border-border/50 shadow-lg shadow-primary/5">
+    <Card>
       <CardHeader className="space-y-3 pb-5 text-center">
         <Link href="/" className="mx-auto flex items-center gap-2.5 self-start">
           <Image

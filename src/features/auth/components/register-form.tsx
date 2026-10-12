@@ -126,7 +126,7 @@ export function RegisterForm() {
       : "animate-in fade-in-0 slide-in-from-left-4";
 
   return (
-    <Card className="border-border/50 shadow-lg shadow-primary/5 overflow-hidden">
+    <Card className="overflow-hidden">
       <CardHeader className="space-y-3 pb-3 text-center">
         <Link href="/" className="mx-auto flex items-center gap-2.5">
           <Image
